@@ -6,12 +6,12 @@
 // restores the page text. The page plumbing lives in ../src/host-page.js,
 // shared with the Chrome extension.
 
-import { parseSeed } from '../src/prng.js?v=20261028144733';
-import { attachToPage, TOP_Z } from '../src/host-page.js?v=20261028144733';
-import { createCrawler as createStubCrawler } from '../src/stub-crawler.js?v=20261028144733';
+import { parseSeed } from '../src/prng.js?v=20261028160256';
+import { attachToPage, TOP_Z } from '../src/host-page.js?v=20261028160256';
+import { createCrawler as createStubCrawler } from '../src/stub-crawler.js?v=20261028160256';
 
 const KEY = '__folioBookmarklet';
-const ENGINE_CANDIDATES = ['../../crawler-engine/src/index.js?v=20261028144733', '../../crawler-engine/index.js?v=20261028144733'];
+const ENGINE_CANDIDATES = ['../../crawler-engine/src/index.js?v=20261028160256', '../../crawler-engine/index.js?v=20261028160256'];
 
 if (window[KEY]) {
   window[KEY].destroy();
@@ -29,7 +29,9 @@ async function boot() {
   if (seed == null) seed = (Math.random() * 2 ** 32) >>> 0;
 
   const createCrawler = await loadEngine(here);
-  const host = await attachToPage({ seed, createCrawler, canvasClass: 'cw-bm-canvas', rngLabel: 'bookmarklet:' + location.host });
+  const raw = here.searchParams.get('seed') || '';
+  const name = !raw || /^\d+$/.test(raw) ? `Specimen ${seed}` : raw.charAt(0).toUpperCase() + raw.slice(1);
+  const host = await attachToPage({ seed, createCrawler, canvasClass: 'cw-bm-canvas', rngLabel: 'bookmarklet:' + location.host, name });
 
   const style = document.createElement('style');
   style.className = 'cw-bm-ui';
@@ -53,7 +55,7 @@ async function boot() {
   addEventListener('keydown', onKey, true);
   close.addEventListener('click', destroy);
 
-  window[KEY] = { destroy, world: host.world, crawler: host.crawler, seed, engine: engineSource };
+  window[KEY] = { destroy, world: host.world, crawler: host.crawler, worker: host.worker, seed, engine: engineSource };
 }
 
 let engineSource = 'stub';

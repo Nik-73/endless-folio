@@ -6,7 +6,7 @@
 //  - Each aspect draws from its own seeded stream, so tuning one aspect later
 //    does not reshuffle the others. Still: any change here changes creatures.
 //    Bump TRAITS_VERSION and keep old versions callable once tokens are minted.
-import { createRng, normalizeSeed } from './rng.js?v=20261028144733';
+import { createRng, normalizeSeed } from './rng.js?v=20261028160256';
 
 export const TRAITS_VERSION = 1;
 

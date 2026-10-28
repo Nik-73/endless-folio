@@ -4,11 +4,12 @@
 // it exactly. Shared by the bookmarklet (bookmarklet/loader.js) and the
 // Chrome extension's content script (crawler-extension/).
 
-import { makeRng } from './prng.js?v=20261028144733';
-import { CORPUS } from './corpus.js?v=20261028144733';
-import { createPredictor } from './predictor.js?v=20261028144733';
-import { createEnv } from './env.js?v=20261028144733';
-import { createWorld, resolvePaperColor } from './world.js?v=20261028144733';
+import { makeRng } from './prng.js?v=20261028160256';
+import { CORPUS } from './corpus.js?v=20261028160256';
+import { createPredictor } from './predictor.js?v=20261028160256';
+import { createEnv } from './env.js?v=20261028160256';
+import { createWorld, resolvePaperColor } from './world.js?v=20261028160256';
+import { createWorker } from './worker.js?v=20261028160256';
 
 export const TOP_Z = 2147483000;
 const BLOCK_SEL = 'p, li, dd, dt, blockquote, figcaption, td, th, h1, h2, h3, h4, h5, h6';
@@ -38,7 +39,7 @@ const PAGE_CSS = `
  * @param {string} [o.rngLabel]
  * @param {object} [o.crawlerOptions] passed through to createCrawler
  */
-export async function attachToPage({ seed, createCrawler, uiClass = 'cw-bm-ui', canvasClass = '', rngLabel = 'host:' + location.host, crawlerOptions = {}, attrPrefix = 'cw' }) {
+export async function attachToPage({ seed, createCrawler, uiClass = 'cw-bm-ui', canvasClass = '', rngLabel = 'host:' + location.host, crawlerOptions = {}, attrPrefix = 'cw', work = true, name = 'Crawler' }) {
   const attr = (k) => 'data-' + attrPrefix + '-' + k; // e.g. data-cw-id
   const BLOCK_KEY = attrPrefix + 'Block', ID_KEY = attrPrefix + 'Id';
   const rng = makeRng(seed).fork(rngLabel);
@@ -118,13 +119,19 @@ export async function attachToPage({ seed, createCrawler, uiClass = 'cw-bm-ui', 
   const predictor = createPredictor(CORPUS, { rng: rng.fork('predictor') });
   world = createWorld({ root: document.body, env, predictor, rng: rng.fork('world'), threadZ: TOP_Z - 1, paperColor: resolvePaperColor(document.body), attrPrefix });
 
-  const crawler = await createCrawler({ seed, canvas, world, startAwake: true, ...crawlerOptions }); // alive on arrival
+  const crawler = await createCrawler({ seed, canvas, world, startAwake: true, scale: innerWidth <= 600 ? 1.15 : 1.4, ...crawlerOptions }); // alive on arrival
   crawler?.start?.();
+
+  // Give it work: tear out links, eat and write, fetch what you tap (worker.js).
+  const worker = work && crawler && 'mouth' in crawler
+    ? createWorker({ crawler, world, predictor, name, z: TOP_Z - 3, uiClass, colors: { ink: '#1d1915', paper: '#fbf7ee', hot: '#c2410c' } })
+    : null;
 
   let destroyed = false;
   function destroy() {
     if (destroyed) return;
     destroyed = true;
+    worker?.destroy();
     crawler?.destroy?.();
     world.destroy();
     env.destroy();
@@ -144,7 +151,7 @@ export async function attachToPage({ seed, createCrawler, uiClass = 'cw-bm-ui', 
     document.querySelectorAll('.' + uiClass).forEach((el) => el.remove());
   }
 
-  return { env, world, crawler, canvas, destroy, track: (el) => added.push(el), get destroyed() { return destroyed; } };
+  return { env, world, crawler, worker, canvas, destroy, track: (el) => added.push(el), get destroyed() { return destroyed; } };
 }
 
 // Readable blocks only: visible, a reasonable amount of text, and not nested

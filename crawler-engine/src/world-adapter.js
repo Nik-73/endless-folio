@@ -95,6 +95,7 @@ class FolioAdapter {
 
   /** Feet light up the words they land on (rate-limited). */
   footstep(x, y, crawler) {
+    if (crawler.mode === 'work') return; // on a job its marks are the job's, not glitter underfoot
     const now = performance.now();
     if (now - this.footT < 180) return;
     this.footT = now;

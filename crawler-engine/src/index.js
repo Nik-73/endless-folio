@@ -1,19 +1,19 @@
 // Public entry point. See ../API.md.
 //
-//   import { createCrawler } from './crawler-engine/src/index.js?v=20261028144733';
+//   import { createCrawler } from './crawler-engine/src/index.js?v=20261028160256';
 //   const c = createCrawler({ seed: 42, canvas, world });
 //   c.start();
-import { Crawler } from './crawler.js?v=20261028144733';
-import { getStage } from './stage.js?v=20261028144733';
-import { adaptWorld, isFolioWorld } from './world-adapter.js?v=20261028144733';
-import { installAudioUnlock, adoptAudio, audio } from './audio.js?v=20261028144733';
-import { generateTraits, toAttributes, TRAITS_VERSION } from './traits.js?v=20261028144733';
-import { sizeFloorScale, presence } from './size.js?v=20261028144733';
+import { Crawler } from './crawler.js?v=20261028160256';
+import { getStage } from './stage.js?v=20261028160256';
+import { adaptWorld, isFolioWorld } from './world-adapter.js?v=20261028160256';
+import { installAudioUnlock, adoptAudio, audio } from './audio.js?v=20261028160256';
+import { generateTraits, toAttributes, TRAITS_VERSION } from './traits.js?v=20261028160256';
+import { sizeFloorScale, presence } from './size.js?v=20261028160256';
 
 export { generateTraits, toAttributes, TRAITS_VERSION, audio, presence, sizeFloorScale };
-export { createStubWorld } from './stub-world.js?v=20261028144733';
+export { createStubWorld } from './stub-world.js?v=20261028160256';
 
-export const ENGINE_VERSION = '0.3.0';
+export const ENGINE_VERSION = '0.4.0';
 
 /**
  * Create a creature on a canvas. Several creatures may share one canvas.
@@ -23,7 +23,7 @@ export function createCrawler({
   seed, canvas, world = null,
   x, y, heading, scale = 1,
   startAwake = true, sound = true, debug = false,
-  pointerTarget = null, tapToSteer = true, bounds = null, insets = null, sizeFloor = true,
+  pointerTarget = null, tapToSteer = true, bounds = null, insets = null, sizeFloor = true, look = 'wire',
 } = {}) {
   if (seed === undefined || seed === null) throw new Error('createCrawler: seed is required');
   if (!canvas || !canvas.getContext) throw new Error('createCrawler: canvas is required');
@@ -35,7 +35,7 @@ export function createCrawler({
   const stage = getStage(canvas, { world, pointerTarget, tapToSteer });
   const crawler = new Crawler({
     seed, traits, world: engineWorld, stage, bounds, insets,
-    x, y, heading, scale: renderScale, startAwake, sound, debug,
+    x, y, heading, scale: renderScale, startAwake, sound, debug, look,
   });
   stage.add(crawler);
 
@@ -65,6 +65,12 @@ export function createCrawler({
     on: (name, fn) => crawler.on(name, fn),
     setDebug(on) { crawler.debug = !!on; },
     get position() { return { x: crawler.x, y: crawler.y, heading: crawler.heading }; },
+    /** Where its jaws are (canvas CSS px): the point it bites and carries from. */
+    get mouth() { const h = crawler.segs[0], a = h.a ?? crawler.heading; return { x: h.x + Math.cos(a) * h.r * 1.1, y: h.y + Math.sin(a) * h.r * 1.1 }; },
+    /** True once the last setTarget point was reached. */
+    get arrived() { return crawler.arrived; },
+    /** Body length in px, for sizing what it carries. */
+    get length() { return crawler.length; },
     get state() { return crawler.state; },
     get mode() { return crawler.state === 'asleep' ? 'asleep' : crawler.mode; },
     get stats() { return stage.stats; },

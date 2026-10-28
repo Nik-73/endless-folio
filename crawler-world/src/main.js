@@ -1,14 +1,15 @@
-import { makeRng, parseSeed, hashString } from './prng.js?v=20261028144733';
-import { CORPUS } from './corpus.js?v=20261028144733';
-import { createPredictor } from './predictor.js?v=20261028144733';
-import { createArticleBuilder } from './article.js?v=20261028144733';
-import { createEnv } from './env.js?v=20261028144733';
-import { createWorld } from './world.js?v=20261028144733';
-import { createCrawler as createStubCrawler } from './stub-crawler.js?v=20261028144733';
+import { makeRng, parseSeed, hashString } from './prng.js?v=20261028160256';
+import { CORPUS } from './corpus.js?v=20261028160256';
+import { createPredictor } from './predictor.js?v=20261028160256';
+import { createArticleBuilder } from './article.js?v=20261028160256';
+import { createEnv } from './env.js?v=20261028160256';
+import { createWorld } from './world.js?v=20261028160256';
+import { createCrawler as createStubCrawler } from './stub-crawler.js?v=20261028160256';
+import { createWorker } from './worker.js?v=20261028160256';
 
 // Where to look for the real engine. ?engine=stub forces the stub;
 // ?engine=<url> loads a specific module.
-const ENGINE_CANDIDATES = ['../crawler-engine/src/index.js?v=20261028144733', '../crawler-engine/index.js?v=20261028144733'];
+const ENGINE_CANDIDATES = ['../crawler-engine/src/index.js?v=20261028160256', '../crawler-engine/index.js?v=20261028160256'];
 const MAX_SECTIONS = 400; // Safety valve on DOM size for very long sessions.
 
 const params = new URLSearchParams(location.search);
@@ -91,10 +92,18 @@ async function loadEngine() {
 
 const { createCrawler, source } = await loadEngine();
 document.documentElement.dataset.engine = source === 'stub' ? 'stub' : 'engine';
-// Big enough to read as a creature at a glance, not a speck in the margin.
-const bodyScale = Number(params.get("size")) || (matchMedia("(max-width: 600px)").matches ? 1.7 : 2.4);
-const crawler = await createCrawler({ seed, canvas, world, startAwake: true, scale: bodyScale }); // alive on arrival; sleep comes later, by temperament
+const bodyScale = Number(params.get('size')) || (matchMedia('(max-width: 600px)').matches ? 1.25 : 1.6);
+const crawler = await createCrawler({ seed, canvas, world, startAwake: true, scale: bodyScale }); // alive on arrival
 crawler?.start?.();
+
+// It works the page: tears out links, eats words and writes with them, breaks
+// paragraphs, and fetches any sentence you tap. See worker.js.
+const rawSeed = params.get('seed') || '';
+const ownerName = /^\d+$/.test(rawSeed) ? `Specimen ${rawSeed}` : rawSeed.charAt(0).toUpperCase() + rawSeed.slice(1);
+const worker = crawler && 'mouth' in crawler && params.get('work') !== 'off'
+  ? createWorker({ crawler, world, predictor, name: ownerName, z: 45, colors: { ink: '#221d17', paper: '#f6f0e3', hot: '#c2410c' }, avoid: () => [document.getElementById('controls')?.getBoundingClientRect()] })
+  : null;
+document.getElementById('seed-label').textContent = /^\d+$/.test(rawSeed) ? `specimen ${seed}` : `${ownerName}'s specimen`;
 
 // ---- phone controls: hide while reading down ---------------------------------
 // Back on scroll up, on any tap, or after a short pause. They also step aside
@@ -119,4 +128,4 @@ setInterval(() => {
 }, 250);
 
 // Debug / test handle. Not part of the engine contract.
-window.__folio = { world, crawler, predictor, seed, engine: source, writeMore };
+window.__folio = { world, crawler, predictor, seed, engine: source, writeMore, worker };

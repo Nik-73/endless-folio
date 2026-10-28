@@ -3,9 +3,9 @@
 //
 // Coordinates are canvas CSS pixels, time is seconds. Nothing here allocates
 // per frame on the hot path (legs, segments and prints are reused).
-import { generateTraits } from './traits.js?v=20261028144733';
-import { createRng } from './rng.js?v=20261028144733';
-import { Voice } from './audio.js?v=20261028144733';
+import { generateTraits } from './traits.js?v=20261028160256';
+import { createRng } from './rng.js?v=20261028160256';
+import { Voice } from './audio.js?v=20261028160256';
 
 const TAU = Math.PI * 2, DEG = Math.PI / 180;
 const clamp = (x, lo, hi) => (x < lo ? lo : x > hi ? hi : x);
@@ -27,6 +27,7 @@ export class Crawler {
     this.bounds = opts.bounds || null;
     this.insets = { top: 0, right: 0, bottom: 0, left: 0, ...(opts.insets || {}) };
     this.debug = !!opts.debug;
+    this.look = opts.look === 'riso' ? 'riso' : 'wire'; // render style only; traits are untouched
     this.rng = createRng(T.seed + ':life');
     this.scale = opts.scale || 1;
     const U = (this.U = T.body.unit * this.scale);
@@ -143,12 +144,22 @@ export class Crawler {
   }
 
   /** Walk to a point (canvas CSS px). Wakes the creature. */
-  setTarget(x, y, { duration = 6 } = {}) {
+  /**
+   * Walk to a point (canvas CSS px). Wakes the creature.
+   * speed: multiple of its own top speed (default: eases in, max 1).
+   * hold: stay on the spot after arriving (until clearTarget or duration), facing `look`.
+   * look: {x, y} to face while walking the last stretch and while holding.
+   * free: don't clamp to the inner roaming area (it may stand right at the column edge).
+   */
+  setTarget(x, y, { duration = 6, speed = 0, hold = false, look = null, free = false } = {}) {
     this.wake('target');
-    const I = this._inner();
-    this.goal = { x: clamp(x, I.x, I.x + I.w), y: clamp(y, I.y, I.y + I.h), until: this.time + duration };
+    const I = free ? this._bounds() : this._inner();
+    this.goal = { x: clamp(x, I.x, I.x + I.w), y: clamp(y, I.y, I.y + I.h), until: this.time + duration, speed, hold, look, free };
     this.engage = null;
+    if (this.mode === 'called' || this.mode === 'wary') this.mode = 'roam';
   }
+  /** True once a setTarget goal has been reached (or dropped). */
+  get arrived() { return !this.goal || this.goal.reached === true; }
   clearTarget() { this.goal = null; }
 
   /**
@@ -198,7 +209,7 @@ export class Crawler {
     for (const s of this.segs) { s.x += dx; s.y += dy; s.px += dx; s.py += dy; }
     for (const l of this.legs) { l.fx += dx; l.fy += dy; l.sx += dx; l.sy += dy; }
     for (let i = 0; i < MAX_PRINTS; i++) { this.prints[i * 3] += dx; this.prints[i * 3 + 1] += dy; }
-    if (this.goal) { this.goal.x += dx; this.goal.y += dy; this.goal.fx += dx; this.goal.fy += dy; }
+    if (this.goal) { this.goal.x += dx; this.goal.y += dy; this.goal.fx += dx; this.goal.fy += dy; if (this.goal.look) this.goal.look = { x: this.goal.look.x + dx, y: this.goal.look.y + dy }; }
     if (this.engage) {
       const e = this.engage; e.x0 += dx; e.x1 += dx; e.y0 += dy; e.y1 += dy;
       if (e.words) for (const w of e.words) { w.x += dx; w.y += dy; }
@@ -323,7 +334,7 @@ export class Crawler {
     const fear = tm.senseRadius * 1.1 + this.length;
     let dirX = 0, dirY = 0, spd = 0, followMode = false;
 
-    const answering = this.goal?.call && !hidden; // a call may take it to the very edge of the column
+    const answering = (this.goal?.call || this.goal?.free) && !hidden; // a call may take it to the very edge of the column
     if (!answering && out > (ptr && ptr.d < tm.senseRadius * 2 ? 40 : 4) && this.startle >= 0 && !(ptr && ptr.down)) { // walk back into view
       if (this.engage && !this._inView(this.engage.x0, this.engage.y0, I)) this.engage = null;
       this.goal = null;
@@ -346,8 +357,18 @@ export class Crawler {
         const fast = Math.max(1.35, 120 / this.maxSpeed);
         spd = 1 - d / g.d0 < 0.6 ? fast : Math.min(fast, Math.max(30, d * 2.2) / this.maxSpeed);
         this.aimA = Math.atan2(g.fy - h.y, g.fx - h.x);
-      } else spd = clamp(d / 80, 0.15, 1);
-      if (d < 6 || this.time > g.until) {
+      } else if (g.speed) {
+        this.mode = 'work';
+        // Brake over a distance that grows with speed, and slow right down when the
+        // target is off to the side, so a fast walker turns in instead of orbiting.
+        const brake = Math.max(50, g.speed * this.maxSpeed * 0.3);
+        const off = Math.abs(angDiff(this.heading, Math.atan2(dy, dx)));
+        spd = g.speed * clamp(d / brake, 0.12, 1) * (off > 0.9 && d < brake * 2 ? 0.2 : off > 0.5 ? 0.6 : 1);
+        if (g.look) this.aimA = Math.atan2(g.look.y - h.y, g.look.x - h.x);
+      } else { this.mode = 'work'; spd = clamp(d / 80, 0.15, 1); }
+      if (g.hold && !g.call && this.time <= g.until) {
+        if (d < 8) { g.reached = true; spd = 0; if (g.look) { dirX = g.look.x - h.x; dirY = g.look.y - h.y; } else { dirX = Math.cos(this.heading); dirY = Math.sin(this.heading); } }
+      } else if (d < 6 || this.time > g.until) {
         this.goal = null;
         if (g.partial) { this.wary = { x: g.fx, y: g.fy, until: this.time + 1.5 }; this.skitPending = Math.max(this.skitPending, this.time + 3); }
       }
@@ -391,7 +412,7 @@ export class Crawler {
           spd = Math.max(0.15, 10 / this.maxSpeed);
         }
       }
-    } else if (this.mode === 'flee' || this.mode === 'follow' || this.mode === 'watch' || this.mode === 'return' || this.mode === 'called' || this.mode === 'wary') {
+    } else if (this.mode === 'flee' || this.mode === 'follow' || this.mode === 'watch' || this.mode === 'return' || this.mode === 'called' || this.mode === 'wary' || this.mode === 'work') {
       this.mode = 'roam';
       this.wanderBase = this.heading;
     }
@@ -428,6 +449,7 @@ export class Crawler {
 
     // What it attends to: a call or the pointer, else the word it is reading.
     if (this.mode === 'called' || this.mode === 'wary') { /* aimA set above */ }
+    else if (this.goal?.look) { const L = this.goal.look; this.aimA = Math.atan2(L.y - h.y, L.x - h.x); }
     else if (ptr && ptr.d < attention * 1.4 && this.mode !== 'flee') this.aimA = Math.atan2(ptr.dy, ptr.dx);
     else if (this.engage?.words) { const w = this.engage.words[Math.min(this.engage.idx, this.engage.words.length - 1)]; this.aimA = Math.atan2(w.y + w.h / 2 - h.y, w.x + w.w / 2 - h.x); }
     else this.aimA = null;
@@ -450,7 +472,7 @@ export class Crawler {
       }
     }
     const dl = Math.hypot(dirX, dirY) || 1;
-    const ew = followMode ? 0.6 : 2.2;
+    const ew = followMode ? 0.6 : this.mode === 'work' ? 0 : 2.2;
     dirX = dirX / dl + ex * ew; dirY = dirY / dl + ey * ew;
     if ((ex || ey) && spd === 0 && this.mode === 'roam') spd = 0.3; // never sulk in a corner
     if (this.mode === 'return') { dirX = cx - h.x; dirY = cy - h.y; } // edges must not fight the return
@@ -658,7 +680,7 @@ export class Crawler {
   _move(dt) {
     const T = this.traits, h = this.segs[0];
     const dA = angDiff(this.heading, this.desired);
-    const urgent = this.mode === 'called' || this.time < this.sprintUntil;
+    const urgent = this.mode === 'called' || this.mode === 'work' || this.time < this.sprintUntil;
     const maxTurn = (urgent ? Math.max(8, T.motion.turn * 3) : T.motion.turn) * dt;
     const turn = clamp(dA * Math.min(1, dt * 8), -maxTurn, maxTurn);
     this.heading += turn;
@@ -892,13 +914,18 @@ export class Crawler {
     }
 
     const breath = 1 + sleepy * 0.05 * Math.sin(t * 2.2);
-    // misregistered accent layer, offset in screen space like a riso print
     ctx.fillStyle = pal.accent;
     ctx.beginPath();
-    for (const s of segs) this._shape(ctx, s, this.printOx, this.printOy, breath);
+    if (this.look === 'riso') {
+      // misregistered accent layer, offset in screen space like a riso print
+      for (const s of segs) this._shape(ctx, s, this.printOx, this.printOy, breath);
+    } else {
+      // wire: hollow ink segments, each with a small hard core of colour
+      for (const s of segs) if (s.shape !== 'grain') this._shape(ctx, s, 0, 0, breath * 0.42);
+    }
     ctx.fill();
     // ink outlines
-    ctx.strokeStyle = pal.ink; ctx.lineWidth = 1.25;
+    ctx.strokeStyle = pal.ink; ctx.lineWidth = this.look === 'riso' ? 1.25 : 1.7;
     ctx.beginPath();
     for (const s of segs) if (s.shape !== 'grain') this._shape(ctx, s, 0, 0, breath);
     ctx.stroke();

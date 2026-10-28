@@ -7,7 +7,7 @@
 //
 // See ../WORLD_API.md for the contract.
 
-import { createThreadLayer } from './fx-layer.js?v=20261028144733';
+import { createThreadLayer } from './fx-layer.js?v=20261028160256';
 
 const KINDS = ['word', 'link', 'image', 'block'];
 
@@ -122,7 +122,9 @@ export function createWorld({ root, env, predictor, rng, threadMount, threadZ = 
     b.dirty = false;
   }
 
+  let gone = false;
   function invalidateAll() {
+    if (gone) return; // late timers after destroy() must not re-mark the page
     for (const b of blocks.values()) b.dirty = true;
     for (const b of active) indexBlock(b);
     threads.redraw();
@@ -250,7 +252,7 @@ export function createWorld({ root, env, predictor, rng, threadMount, threadZ = 
     }
     b.el.classList.add('fx-scattered');
     b.scattered = true;
-    setTimeout(() => { b.dirty = true; if (active.has(b)) indexBlock(b); threads.redraw(); }, 1900);
+    setTimeout(() => { if (gone) return; b.dirty = true; if (active.has(b)) indexBlock(b); threads.redraw(); }, 1900);
     if (restoreAfter) setTimeout(() => gather(it), restoreAfter);
     return () => gather(it);
   }
@@ -264,7 +266,7 @@ export function createWorld({ root, env, predictor, rng, threadMount, threadZ = 
     }
     b.el.classList.remove('fx-scattered');
     b.scattered = false;
-    setTimeout(() => { b.dirty = true; if (active.has(b)) indexBlock(b); threads.redraw(); }, 1500);
+    setTimeout(() => { if (gone) return; b.dirty = true; if (active.has(b)) indexBlock(b); threads.redraw(); }, 1500);
   }
 
   function fade(it, { amount = 0.22 } = {}) {
@@ -356,6 +358,6 @@ export function createWorld({ root, env, predictor, rng, threadMount, threadZ = 
     stats: () => ({ blocks: blocks.size, active: active.size, items: items.size, threads: threads.count() }),
     reflow: invalidateAll,
     /** Host-only: stop observing and remove threads (used by the bookmarklet's teardown). */
-    destroy() { io.disconnect(); ro.disconnect(); clearTimeout(reflowTimer); threads.destroy(); },
+    destroy() { gone = true; io.disconnect(); ro.disconnect(); clearTimeout(reflowTimer); threads.destroy(); },
   };
 }
