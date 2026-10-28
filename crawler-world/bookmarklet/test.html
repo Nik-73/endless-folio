@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Sample article — bookmarklet test page</title>
+  <style>
+    body { font: 18px/1.6 Georgia, serif; max-width: 38rem; margin: 2rem auto; padding: 0 1rem; color: #222; background: #fff; }
+    img { max-width: 100%; display: block; margin: 1rem 0; }
+    a { color: #0645ad; }
+  </style>
+</head>
+<body>
+  <!-- A deliberately plain third-party-style page to test the bookmarklet without site security rules. -->
+  <h1>Lighthouses of the northern coast</h1>
+  <p>The northern coast is lined with <a href="#keepers">small lighthouses</a>, most of them built of local stone during the long century of coastal trade. Many still stand, though few are lit.</p>
+  <p>Each tower was tended by a keeper who lived at its foot with a family, a goat and a logbook. The <a href="#logs">logbooks</a> record weather, passing ships and, more often than anyone expected, the birds.</p>
+  <img alt="Diagram of a lighthouse" width="480" height="220" src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='480' height='220'%3E%3Crect width='480' height='220' fill='%23eef'/%3E%3Cpath d='M230 200 L240 40 L250 200Z' fill='%23557'/%3E%3Ccircle cx='240' cy='40' r='10' fill='%23fc3'/%3E%3C/svg%3E">
+  <h2 id="keepers">Keepers</h2>
+  <p>Keepers were paid in coin and lamp oil. The oil was measured weekly by an inspector who travelled the coast by cart, and whose own diaries complain mostly about the roads.</p>
+  <ul>
+    <li>The tallest tower stands at the mouth of the grey river.</li>
+    <li>The oldest was rebuilt three times after storms.</li>
+    <li>The smallest is barely taller than a house.</li>
+  </ul>
+  <h2 id="logs">Logbooks</h2>
+  <p>Today the logbooks are kept in a regional archive, where readers can request them by tower and year. Their margins are full of small drawings of boats, clouds and the occasional sea creature that nobody else ever reported.</p>
+  <p>Below is the bookmarklet loader, included here so this page can be tested directly:</p>
+  <p><button type="button" id="go">Start crawler</button></p>
+  <script type="module">
+    const seed = new URLSearchParams(location.search).get('seed') || '';
+    document.getElementById('go').addEventListener('click', () => import('./loader.js?' + (seed ? 'seed=' + encodeURIComponent(seed) + '&' : '') + 't=' + Date.now()));
+  </script>
+</body>
+</html>

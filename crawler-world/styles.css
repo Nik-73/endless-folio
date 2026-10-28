@@ -1,0 +1,282 @@
+/* The Endless Folio — an original encyclopedia-style design: a field almanac
+   printed on warm paper. Serif body, oxblood dotted cross-references, ruled
+   specimen card, ornamented section rules. */
+
+:root {
+  --paper: #f2ecdf;
+  --paper-deep: #e8dfcc;
+  --ink: #221d17;
+  --ink-soft: #5b5246;
+  --rule: #b9ab92;
+  --accent: #8e2f1c;
+  --accent-soft: #c8742b;
+  --measure: 40rem;
+  --serif: "Iowan Old Style", "Palatino Linotype", Palatino, "Book Antiqua", Charter, Georgia, serif;
+  --label: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  color-scheme: light;
+}
+
+* { box-sizing: border-box; }
+
+html {
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+  background: var(--paper);
+}
+
+body {
+  margin: 0;
+  color: var(--ink);
+  background:
+    radial-gradient(ellipse at 20% 0%, rgba(255, 255, 255, 0.55), transparent 60%),
+    radial-gradient(ellipse at 100% 100%, rgba(142, 47, 28, 0.05), transparent 50%),
+    var(--paper);
+  font: 17px/1.62 var(--serif);
+  font-feature-settings: "onum" 1, "kern" 1;
+  min-height: 100vh;
+  padding-bottom: calc(5rem + env(safe-area-inset-bottom));
+}
+
+/* ---- masthead ----------------------------------------------------------- */
+.masthead {
+  max-width: calc(var(--measure) + 2.4rem);
+  margin: 0 auto;
+  padding: calc(1rem + env(safe-area-inset-top)) max(1.2rem, env(safe-area-inset-right)) 0.4rem max(1.2rem, env(safe-area-inset-left));
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.2rem 1rem;
+  border-bottom: 3px double var(--rule);
+}
+.mark { color: var(--ink); text-decoration: none; display: inline-flex; align-items: baseline; gap: 0.45rem; }
+.mark-glyph { color: var(--accent); font-size: 1.3rem; }
+.mark-name { font-variant: small-caps; letter-spacing: 0.08em; font-size: 1.15rem; }
+.mark-tag { margin: 0; font-style: italic; color: var(--ink-soft); font-size: 0.9rem; }
+
+/* ---- article ------------------------------------------------------------ */
+.page {
+  max-width: calc(var(--measure) + 2.4rem);
+  margin: 0 auto;
+  padding: 0 max(1.2rem, env(safe-area-inset-right)) 0 max(1.2rem, env(safe-area-inset-left));
+  position: relative;
+  overflow-x: hidden; /* scattered words must never create sideways scroll */
+  overflow-x: clip;
+  overflow-clip-margin: 0;
+}
+
+.entry-head { padding: 1.6rem 0 0.6rem; }
+.entry-head h1 {
+  margin: 0;
+  font-weight: 400;
+  font-style: italic;
+  font-size: clamp(2rem, 6.5vw, 3.1rem);
+  line-height: 1.08;
+  letter-spacing: -0.01em;
+}
+.entry-meta {
+  margin: 0.5rem 0 0;
+  font: 0.72rem/1.4 var(--label);
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: var(--ink-soft);
+}
+
+.entry p { margin: 0 0 1rem; hyphens: auto; -webkit-hyphens: auto; }
+.entry p.lead { font-size: 1.08em; }
+.entry p.lead::first-letter {
+  float: left;
+  font-size: 3.3em;
+  line-height: 0.85;
+  padding: 0.08em 0.08em 0 0;
+  color: var(--accent);
+}
+
+.entry h2 {
+  margin: 2.2rem 0 0.7rem;
+  font-weight: 400;
+  font-variant: small-caps;
+  letter-spacing: 0.06em;
+  font-size: 1.32rem;
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+.entry h2::before { content: "§"; color: var(--accent); font-variant: normal; }
+.entry h2::after { content: ""; flex: 1; height: 1px; background: linear-gradient(90deg, var(--rule), transparent); }
+
+/* Every word is its own inline-block so it can be transformed (scattered)
+   without changing line breaking. */
+.w { display: inline-block; transform-origin: 50% 60%; }
+
+a.xref { color: var(--accent); text-decoration: none; }
+a.xref .w { text-decoration: underline dotted; text-decoration-thickness: 1px; text-underline-offset: 0.18em; }
+a.xref:hover .w, a.xref:focus-visible .w { text-decoration-style: solid; }
+a.xref:focus-visible { outline: 2px solid var(--accent-soft); outline-offset: 2px; border-radius: 2px; }
+
+/* ---- specimen card ----------------------------------------------------- */
+.card {
+  margin: 0.4rem 0 1.4rem;
+  border: 1px solid var(--rule);
+  outline: 1px solid var(--rule);
+  outline-offset: 3px;
+  background: rgba(255, 252, 244, 0.6);
+  padding: 0.8rem;
+}
+.card .plate { margin: 0 0 0.6rem; }
+.card dl { margin: 0; display: grid; grid-template-columns: auto 1fr; gap: 0.15rem 0.9rem; font-size: 0.88rem; }
+.card dt { font: 0.68rem/1.9 var(--label); text-transform: uppercase; letter-spacing: 0.1em; color: var(--ink-soft); }
+.card dd { margin: 0; }
+
+@media (min-width: 720px) {
+  .card { float: right; width: 15.5rem; margin: 0.4rem 0 1rem 1.4rem; }
+}
+
+/* ---- plates ------------------------------------------------------------- */
+.plate { margin: 1.4rem 0; }
+.plate-svg { display: block; width: 100%; height: auto; max-height: 60vh; }
+.plate-bg { fill: #f7f1e4; stroke: var(--rule); }
+.plate-ink { stroke: var(--ink); }
+.plate-ink path, .plate-ink ellipse, .plate-ink circle { vector-effect: non-scaling-stroke; }
+.plate-solid { fill: var(--ink); stroke: none; }
+.plate-route { stroke: var(--accent); stroke-dasharray: 2 4; stroke-width: 1.2; }
+.plate-glyph { fill: var(--ink); font-family: var(--serif); }
+.plate-glyph.ghost { fill: none; stroke: var(--ink-soft); stroke-width: 0.5; opacity: 0.5; }
+.plate figcaption { font-size: 0.82rem; font-style: italic; color: var(--ink-soft); margin-top: 0.4rem; line-height: 1.45; }
+
+/* ---- contents + see also ----------------------------------------------- */
+.toc {
+  display: inline-block;
+  min-width: min(100%, 16rem);
+  margin: 0.4rem 0 0.6rem;
+  padding: 0.6rem 1rem 0.6rem 0.9rem;
+  border-left: 3px solid var(--accent);
+  background: var(--paper-deep);
+}
+.toc-title { margin: 0 0 0.2rem !important; font: 0.7rem/1.6 var(--label); text-transform: uppercase; letter-spacing: 0.12em; color: var(--ink-soft); }
+.toc ol { margin: 0; padding-left: 1.3rem; }
+.toc a { color: var(--ink); text-decoration-color: var(--rule); }
+.toc-more { list-style: none; font-style: italic; color: var(--ink-soft); margin-left: -1.3rem; font-size: 0.9rem; }
+
+.see-also ul { columns: 2 12rem; padding-left: 1.1rem; margin: 0; }
+
+.continuation-note {
+  text-align: center;
+  font-style: italic;
+  color: var(--ink-soft);
+  font-size: 0.85rem;
+  margin: 2.5rem 0 0 !important;
+}
+.continuation-note::before, .continuation-note::after { content: " ❧ "; color: var(--accent); font-style: normal; }
+.continuation .entry-section.fresh { animation: ink-in 1.4s ease-out both; }
+@keyframes ink-in { from { opacity: 0; filter: blur(2px); } to { opacity: 1; filter: none; } }
+
+.sentinel { height: 1px; }
+
+/* ---- creature + effects --------------------------------------------------- */
+.crawler-canvas {
+  position: fixed;
+  left: 0;
+  top: 0;
+  width: 100%;
+  height: 100vh;
+  height: 100lvh; /* large viewport: no resize when mobile toolbars collapse */
+  pointer-events: none; /* taps and scrolls go straight through to the page */
+  z-index: 50;
+}
+.cw-threads { color: var(--accent); }
+.cw-thread { opacity: 0.75; }
+
+.fx-hl { animation: fx-hl 1.8s ease-out both; border-radius: 3px; }
+@keyframes fx-hl {
+  0% { background-color: rgba(200, 116, 43, 0.55); background-color: color-mix(in srgb, var(--fx-color, var(--accent-soft)) 45%, transparent); }
+  100% { background-color: transparent; }
+}
+.fx-linked { text-decoration: underline; text-decoration-color: var(--accent-soft); text-underline-offset: 0.2em; }
+.fx-ghost { color: var(--ink-soft); }
+.fx-pulse { animation: fx-pulse 0.9s ease-out; }
+@keyframes fx-pulse { 30% { transform: scale(1.025) rotate(-0.6deg); } }
+
+/* ---- controls --------------------------------------------------------------- */
+.controls {
+  position: fixed;
+  z-index: 60;
+  right: max(0.75rem, env(safe-area-inset-right));
+  bottom: max(0.75rem, env(safe-area-inset-bottom));
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 0.4rem;
+  max-width: calc(100vw - 1.5rem);
+  font: 0.72rem/1 var(--label);
+}
+.controls button, .controls a {
+  font: inherit;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--ink);
+  background: rgba(242, 236, 223, 0.92);
+  -webkit-backdrop-filter: blur(6px);
+  backdrop-filter: blur(6px);
+  border: 1px solid var(--rule);
+  border-radius: 999px;
+  min-height: 2.5rem; /* ≥ 40px touch target */
+  padding: 0 0.9rem;
+  display: inline-flex;
+  align-items: center;
+  text-decoration: none;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+.controls button[aria-pressed="true"] { background: var(--ink); color: var(--paper); border-color: var(--ink); }
+.seed-label { color: var(--ink-soft); padding: 0 0.3rem; text-transform: uppercase; letter-spacing: 0.08em; }
+
+.controls .ico { width: 1.15rem; height: 1.15rem; margin-right: 0.45rem; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; flex: none; }
+.controls .ico path:first-child { fill: currentColor; stroke: none; }
+#new-specimen .ico path:first-child { fill: none; stroke: currentColor; }
+#sound-toggle[aria-pressed="false"] .ico-on, #sound-toggle[aria-pressed="true"] .ico-off { display: none; }
+.controls {
+  transition: transform 0.28s cubic-bezier(.2,.7,.2,1), opacity 0.22s;
+}
+
+@media (max-width: 480px) {
+  body { font-size: 16.5px; }
+}
+
+/* Phones: a compact column of round icon buttons on the right edge that slides
+   away while reading downward (main.js toggles .is-hidden / .is-yielding). */
+@media (max-width: 600px) {
+  .seed-label { display: none; }
+  .controls {
+    flex-direction: column;
+    flex-wrap: nowrap;
+    gap: 0.5rem;
+    right: max(0.6rem, env(safe-area-inset-right));
+    bottom: max(0.75rem, env(safe-area-inset-bottom));
+  }
+  .controls button, .controls a {
+    width: 2.75rem; height: 2.75rem; min-height: 0; /* 44px touch target */
+    padding: 0;
+    justify-content: center;
+    border-radius: 50%;
+    box-shadow: 0 1px 4px rgba(40, 28, 16, 0.12);
+  }
+  .controls .ico { margin: 0; width: 1.3rem; height: 1.3rem; }
+  .controls .lbl {
+    position: absolute; width: 1px; height: 1px; overflow: hidden;
+    clip: rect(0 0 0 0); clip-path: inset(50%); white-space: nowrap;
+  }
+  .controls.is-hidden {
+    transform: translateX(calc(100% + 1.2rem + env(safe-area-inset-right)));
+    opacity: 0;
+    pointer-events: none;
+  }
+  /* The creature is under the buttons: step aside so it can be poked. */
+  .controls.is-yielding { opacity: 0.18; pointer-events: none; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .continuation .entry-section.fresh { animation: none; }
+  .controls, .controls.is-hidden { transform: none; }
+  .fx-pulse { animation: none; }
+}

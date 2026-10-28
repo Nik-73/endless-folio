@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#f2ecdf">
+  <title>The Endless Folio</title>
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="styles.css">
+  <script type="module" src="src/main.js"></script>
+</head>
+<body>
+  <header class="masthead">
+    <a class="mark" href="./" aria-label="The Endless Folio, home">
+      <span class="mark-glyph" aria-hidden="true">❦</span>
+      <span class="mark-name">The Endless Folio</span>
+    </a>
+    <p class="mark-tag">an encyclopedia that keeps writing itself</p>
+  </header>
+
+  <main id="page" class="page"></main>
+  <div id="sentinel" class="sentinel" aria-hidden="true"></div>
+
+  <canvas id="crawler-canvas" class="crawler-canvas" aria-hidden="true"></canvas>
+
+  <!-- data-cw-ignore: touches here never steer the creature. -->
+  <div class="controls" id="controls" role="toolbar" aria-label="Folio controls" data-cw-ignore>
+    <span id="seed-label" class="seed-label"></span>
+    <button id="sound-toggle" type="button" aria-pressed="false" aria-label="Sound off">
+      <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9v6h4l5 4V5L8 9H4z"/><path class="ico-on" d="M16 8.5a5 5 0 0 1 0 7M18.5 6a8.5 8.5 0 0 1 0 12"/><path class="ico-off" d="M16.5 9.5l5 5m0-5l-5 5"/></svg>
+      <span class="lbl">Sound off</span>
+    </button>
+    <button id="new-specimen" type="button" aria-label="New specimen">
+      <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M19 12a7 7 0 1 1-2.05-4.95M19 4v4h-4"/></svg>
+      <span class="lbl">New specimen</span>
+    </button>
+    <a id="bookmarklet-link" href="bookmarklet/" aria-label="Bookmarklet">
+      <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 4h10v16l-5-4-5 4z"/></svg>
+      <span class="lbl">Bookmarklet</span>
+    </a>
+  </div>
+</body>
+</html>

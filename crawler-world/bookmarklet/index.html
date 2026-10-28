@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Take your specimen elsewhere — The Endless Folio</title>
+  <link rel="stylesheet" href="../styles.css">
+  <style>
+    .install { max-width: 40rem; margin: 0 auto; padding: 1.5rem 1.25rem 6rem; }
+    .install h1 { font-style: italic; margin-bottom: .3rem; }
+    .grab { display: inline-block; margin: 1rem 0; padding: .8rem 1.2rem; border: 1px solid var(--rule); border-radius: 999px;
+      background: var(--paper-2, #f6f0e3); color: var(--accent); font-family: ui-monospace, Menlo, monospace; letter-spacing: .05em; text-decoration: none; }
+    textarea { width: 100%; min-height: 6.5rem; font: 12px/1.4 ui-monospace, Menlo, monospace; padding: .6rem; box-sizing: border-box; }
+    .install ol li { margin: .35rem 0; }
+    .note { font-size: .9em; opacity: .8; }
+    button.try { font: inherit; padding: .5rem .9rem; margin-right: .5rem; }
+  </style>
+</head>
+<body>
+  <main class="install">
+    <h1>Take your specimen elsewhere</h1>
+    <p>This experimental bookmarklet drops <strong id="which">your specimen</strong> onto whatever page you are reading. It walks the text, lights up words, ties them together with thread and now and then shakes a paragraph loose. Press Escape or “Remove crawler” to put the page back.</p>
+
+    <h2>On a laptop</h2>
+    <p>Drag this button to your bookmarks bar, then click it on any article:</p>
+    <a id="grab" class="grab" href="#">❦ Folio crawler</a>
+
+    <h2>On a phone</h2>
+    <ol>
+      <li>Copy the code below.</li>
+      <li>Bookmark any page, then edit that bookmark.</li>
+      <li>Replace its address with the copied code and name it “Folio crawler”.</li>
+      <li>On the page you want, open your bookmarks and tap it (in Chrome, type the name in the address bar and pick the bookmark).</li>
+    </ol>
+    <textarea id="code" readonly></textarea>
+    <p><button id="copy" class="try" type="button">Copy code</button>
+       <button id="try" class="try" type="button">Try it on this page</button>
+       <a href="test.html" id="test-link">Try it on a sample article</a></p>
+    <p class="note">Some sites forbid outside scripts and will block the crawler; it never sees passwords or forms and makes no network requests of its own. Text you read stays on your device.</p>
+    <p><a id="back" href="../">← Back to the folio</a></p>
+  </main>
+  <script type="module">
+    const params = new URLSearchParams(location.search);
+    const seed = params.get('seed') || '';
+    const loader = new URL('loader.js', location.href);
+    if (seed) loader.searchParams.set('seed', seed);
+    const code = `javascript:(()=>{const s=document.createElement('script');s.type='module';s.src=${JSON.stringify(loader.href)}+(${JSON.stringify(seed ? '&' : '?')})+'t='+Date.now();document.head.appendChild(s)})()`;
+    document.getElementById('grab').href = code;
+    document.getElementById('grab').addEventListener('click', (e) => { e.preventDefault(); alert('Drag this button to your bookmarks bar instead of clicking it.'); });
+    document.getElementById('code').value = code;
+    document.getElementById('which').textContent = seed ? `specimen ${seed}` : 'a random specimen';
+    document.getElementById('copy').addEventListener('click', async () => {
+      const ta = document.getElementById('code');
+      try { await navigator.clipboard.writeText(ta.value); } catch { ta.select(); document.execCommand('copy'); }
+      document.getElementById('copy').textContent = 'Copied';
+    });
+    document.getElementById('try').addEventListener('click', () => import(loader.href + (seed ? '&' : '?') + 't=' + Date.now()));
+    if (seed) {
+      document.getElementById('back').href = `../?seed=${encodeURIComponent(seed)}`;
+      document.getElementById('test-link').href = `test.html?seed=${encodeURIComponent(seed)}`;
+    }
+  </script>
+</body>
+</html>
