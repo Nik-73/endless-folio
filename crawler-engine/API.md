@@ -1,6 +1,6 @@
 # Crawler engine — API
 
-Plain ES modules, no dependencies, Canvas 2D. Engine version `0.1.0`, traits version `1`.
+Plain ES modules, no dependencies, Canvas 2D. Engine version `0.2.0`, traits version `1`.
 
 ```
 crawler-engine/
@@ -36,12 +36,13 @@ The Folio host (`crawler-world/src/main.js`) already finds the engine at `../cra
 | `world` | `null` | the page the creature lives on (see below). Without it the creature just roams the canvas. |
 | `x`, `y`, `heading` | random from seed | start position (canvas CSS px) and heading (radians). |
 | `scale` | `1` | size multiplier. Speed scales with √scale. |
-| `startAwake` | `false` | creatures start asleep and wake on interaction. |
+| `startAwake` | `true` | start awake (and stay up at least 20 s). Pass `false` to start curled up until the first interaction (the demo does). |
 | `sound` | `true` | `false` disables the voice for this creature. |
 | `debug` | `false` | draws sense radius, foot targets, engaged item and mode. |
 | `pointerTarget` | canvas parent | element to listen to for pointer/touch (standalone mode only). |
 | `tapToSteer` | `true` | tapping empty space calls the nearest creature over. |
-| `bounds` | auto | `{x,y,w,h}` or a function returning it, to confine the creature. |
+| `bounds` | auto | `{x,y,w,h}` or a function returning it, to confine the creature. Default: `world.bounds()` (visible column), else the canvas. |
+| `insets` | `0` | `{top,right,bottom,left}` canvas CSS px to keep clear of host UI (toolbars). Also `handle.setInsets()`. |
 
 Handle:
 
@@ -53,12 +54,13 @@ Handle:
 | `poke(x, y)` | as if tapped at that point. |
 | `setTarget(x, y, {duration=6})`, `clearTarget()` | walk somewhere (wakes it). |
 | `place(x, y, heading?)` | teleport and re-plant the legs. |
+| `setInsets({top,right,bottom,left})` | change UI insets at runtime. |
 | `on(event, fn) -> off` | events below. |
 | `setDebug(bool)` | |
 | `seed`, `traits`, `attributes` | normalised seed, full trait object, OpenSea-style attribute array. |
 | `position` | `{x, y, heading}` of the head, canvas CSS px. |
 | `state` | `'asleep' \| 'awake'`. |
-| `mode` | `'asleep' \| 'roam' \| 'watch' \| 'follow' \| 'flee' \| 'engage'`. |
+| `mode` | `'asleep' \| 'roam' \| 'watch' \| 'follow' \| 'flee' \| 'engage' \| 'return'`. |
 | `stats` | `{fps, frameMs, updateMs, drawMs}` for the stage, refreshed each second. |
 | `crawler`, `stage` | internals, for debugging. |
 
@@ -66,7 +68,7 @@ Events (payload always includes `crawler`):
 
 | event | payload |
 |---|---|
-| `wake` | `{reason}` — `'pointer' 'poke' 'tap' 'target' 'api' …` |
+| `wake` | `{reason}` — `'first-interaction' 'pointer' 'poke' 'tap' 'target' 'return' 'api' …` |
 | `sleep` | `{reason}` — `'idle' 'perch' 'api'` |
 | `poke` | `{x, y}` |
 | `engage` | `{target, effect}` — it has picked an item to go to |
@@ -86,7 +88,8 @@ Other exports: `generateTraits(seed)`, `toAttributes(traits)`, `TRAITS_VERSION`,
 
 ## Behaviour
 
-- **Sleep until interaction.** Creatures start curled up (legs folded, slow breathing, little squares drifting up). A pointer or finger moving within roughly `senseRadius × 1.5` wakes them. So do a tap, a press or `wake()`. After `temperament.sleepAfter` seconds with nothing happening they go back to sleep.
+- **Awake on arrival, sleep later.** By default creatures start awake and won't doze for the first 20 s (8 s after any later wake). After that, `temperament.sleepAfter` seconds with nothing happening sends them to sleep (legs folded, slow breathing, little squares drifting up). The **first** pointer move, press or tap anywhere on the page wakes every sleeper. After that, a pointer moving within roughly `senseRadius × 1.5` wakes one, as do a press, a tap or `wake()`. A sleeper that ends up off-screen wakes and walks back.
+- **Staying in view.** The creature roams `world.bounds()` (the visible part of the column, clipped to `visualViewport` so a phone's URL bar doesn't hide it), minus `insets`, with a margin so its legs stay visible. Scrolling carries it with the text. If that pushes it off-screen it switches to mode `return` and walks back in; if it's pushed far away it re-enters from just past the nearest edge. It ignores page items that aren't in view and abandons any it was visiting once they scroll away.
 - **Steering.** Pointer nearby: bold creatures follow, timid ones flee (towards images, for cover), the rest keep watch. **Pressing/holding** adds +0.5 boldness, so most creatures come to a held finger or mouse. **Tap on a creature** pokes it (it startles away; very bold ones turn to face you). **Tap empty space** sends the nearest creature there (skittish ones only wake). The pointer stops attracting 2.5 s after the last move, so a lifted finger is forgotten.
 - **Page sensing.** About 3 times a second an idle creature calls `world.queryNear(x, y, senseRadius)`. It picks an item weighted by its temperament (`prefs`), walks over and acts on it (`effects`). It reads along words, perches on images and tugs links. Each item then has a 12–25 s cooldown.
 - **Locomotion.** Legs step on their own when their foot lags behind its rest spot. Neighbours that are mid-step hold a leg back; neighbours that just landed nudge it forward (a simplified Cruse/Walknet scheme). Tripod, tetrapod, wave and other gaits emerge from those local rules. Each leg is a two-bone IK chain with the knee bent outward. The spine follows the head with a per-joint bend limit.

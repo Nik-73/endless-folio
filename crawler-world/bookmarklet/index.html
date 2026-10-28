@@ -42,7 +42,9 @@
   <script type="module">
     const params = new URLSearchParams(location.search);
     const seed = params.get('seed') || '';
-    const loader = new URL('loader.js', location.href);
+    // On the public site, load through jsDelivr: many sites (Wikipedia included) allow it in their script rules but not github.io.
+    const CDN_LOADER = 'https://cdn.jsdelivr.net/gh/Nik-73/endless-folio@main/crawler-world/bookmarklet/loader.js';
+    const loader = new URL(location.hostname.endsWith('github.io') ? CDN_LOADER : new URL('loader.js', location.href).href);
     if (seed) loader.searchParams.set('seed', seed);
     const code = `javascript:(()=>{const s=document.createElement('script');s.type='module';s.src=${JSON.stringify(loader.href)}+(${JSON.stringify(seed ? '&' : '?')})+'t='+Date.now();document.head.appendChild(s)})()`;
     document.getElementById('grab').href = code;
