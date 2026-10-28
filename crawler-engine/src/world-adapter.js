@@ -93,15 +93,30 @@ class FolioAdapter {
     }
   }
 
-  /** Feet light up the words they land on (rate-limited). */
-  footstep(x, y, crawler) {
-    if (crawler.mode === 'work') return; // on a job its marks are the job's, not glitter underfoot
+  /**
+   * Where a foot can grip near (x, y): the nearest edge of a line of text
+   * (top or bottom of a word box), or null on bare paper. Feet stand on the
+   * page's own structure instead of hovering over it.
+   */
+  footHold(x, y, reach) {
+    const hit = this.host.queryNear(x, y, reach, { kinds: ['word'], limit: 4 });
+    let best = null, bd = Infinity;
+    for (const it of hit) {
+      const px = Math.min(Math.max(x, it.x + 1), it.x + it.w - 1);
+      for (const py of [it.y + 1, it.y + it.h - 1]) {
+        const d = Math.hypot(px - x, py - y);
+        if (d < bd) { bd = d; best = { x: px, y: py, id: it.id }; }
+      }
+    }
+    return best;
+  }
+
+  /** A planted foot presses the word under it (no colour, just weight). */
+  footstep(x, y, crawler, holdId) {
     const now = performance.now();
-    if (now - this.footT < 180) return;
+    if (now - this.footT < 60) return;
     this.footT = now;
-    const hit = this.host.queryNear(x, y, 0, { kinds: ['word'], limit: 1 })[0];
-    if (!hit || hit.id === this.lastFootWord) return;
-    this.lastFootWord = hit.id;
-    this.host.applyEffect('highlight', hit, { color: crawler.traits.palette.tint, duration: 900 });
+    const id = holdId || this.host.queryNear(x, y, 2, { kinds: ['word'], limit: 1 })[0]?.id;
+    if (id) this.host.applyEffect('press', id);
   }
 }

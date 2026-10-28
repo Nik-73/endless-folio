@@ -17,7 +17,10 @@
 //
 // Shared by the Folio (src/main.js) and other people's pages (host-page.js).
 
+import { createPageLayer, localStore, pageKey } from './page-layer.js?v=20261028175358';
+
 const NS = 'http://www.w3.org/2000/svg';
+const CDN_LOADER = 'https://cdn.jsdelivr.net/gh/Nik-73/endless-folio@main/crawler-world/bookmarklet/loader.js';
 const STOP = new Set('a an and are as at be been but by can could did do does for from had has have he her his how i if in into is it its may more most much not of on once one or our out over she so some such than that the their them then there these they this those though to too under upon very was we were what when where which while who whom why will with would you your also only other same been being about after again against all any because before below between both down during each few further here just like made make many must never nothing now off often own said say says should since still through until whether within without yet'.split(' '));
 
 const CSS = `
@@ -67,6 +70,11 @@ const CSS = `
 .cw-ledger.is-chip { max-width: calc(100vw - 20px); }
 .cw-ledger.is-chip.is-closed header { padding: 6px 10px; }
 .cw-ledger.is-chip.is-closed header b { max-width: 52vw; }
+html.cw-original .cw-torn, html.cw-original .cw-torn *, html.cw-original .cw-bitten { color: inherit !important; background: none !important; outline: 0 !important; }
+html.cw-original .cw-knocked { transform: none !important; opacity: 1 !important; }
+.cw-ledger li .from { opacity: .5; font-size: 10px; margin-left: 4px; }
+.cw-ledger footer { flex-wrap: wrap; }
+.cw-ledger footer button[aria-pressed="true"] { background: var(--cw-ink); color: var(--cw-paper); }
 @keyframes cw-land { 0% { background: color-mix(in srgb, var(--cw-hot) 30%, transparent); } 100% { background: transparent; } }
 @media (prefers-reduced-motion: reduce) { .cw-knocked { transition: none; } .cw-ledger .dot { animation: none; } }
 `;
@@ -87,7 +95,7 @@ const clean = (s) => String(s || '').replace(/\s+/g, ' ').trim();
  * @param {string} [o.uiClass] class put on everything we add (host pages tear down by it)
  * @param {function} [o.avoid] () => [DOMRect] host UI the ledger and creature keep clear of
  */
-export function createWorker({ crawler, world, predictor = null, name = 'Crawler', z = 45, colors = {}, uiClass = 'cw-work-ui', doc = document, avoid = () => [] }) {
+export function createWorker({ crawler, world, predictor = null, name = 'Crawler', z = 45, colors = {}, uiClass = 'cw-work-ui', doc = document, avoid = () => [], store = localStore(), seed = null, loaderUrl = CDN_LOADER }) {
   const win = doc.defaultView;
   const added = [];
   const ink = colors.ink || '#1d1915', paper = colors.paper || '#f6f0e3', hot = colors.hot || '#c2410c';
@@ -138,7 +146,7 @@ export function createWorker({ crawler, world, predictor = null, name = 'Crawler
       <section class="s-quotes"><h4>Sentences you sent it for</h4><ol></ol><div class="empty">tap any word on the page</div></section>
       <section class="s-lines"><h4>What it wrote from what it ate</h4><ol></ol><div class="empty">nothing yet</div></section>
     </div>
-    <footer><button type="button" data-do="copy">Copy ledger</button><button type="button" data-do="mend">Mend page</button><button type="button" data-do="pause">Pause</button></footer>`;
+    <footer><button type="button" data-do="original" aria-pressed="false" title="Peek at the page as it was before">Original</button><button type="button" data-do="keep" title="Save this mutated page as its own file">Keep a copy</button><button type="button" data-do="copy">Copy ledger</button><button type="button" data-do="mend" title="Undo everything it did to this page">Mend page</button><button type="button" data-do="pause">Pause</button></footer>`;
   ledger.querySelector('header b').textContent = `${name}'s ledger`;
   doc.body.append(ledger);
   added.push(ledger);
@@ -156,7 +164,9 @@ export function createWorker({ crawler, world, predictor = null, name = 'Crawler
     const b = e.target.closest('button[data-do]');
     if (!b) return;
     if (b.dataset.do === 'copy') copyLedger(b);
-    if (b.dataset.do === 'mend') { mendAll(); }
+    if (b.dataset.do === 'mend') { mendAll(); status('page mended'); }
+    if (b.dataset.do === 'original') { const on = doc.documentElement.classList.toggle('cw-original'); b.setAttribute('aria-pressed', String(on)); status(on ? 'showing the original page' : 'back in its version of the page'); }
+    if (b.dataset.do === 'keep') keepCopy(b);
     if (b.dataset.do === 'pause') { paused = !paused; b.textContent = paused ? 'Resume' : 'Pause'; if (paused) { cancel(); status('paused'); } else status('looking around'); }
   });
 
@@ -189,11 +199,45 @@ export function createWorker({ crawler, world, predictor = null, name = 'Crawler
     while (ol.children.length > 30) ol.lastElementChild.remove();
     bump();
   }
+  // One ledger for the creature, across every page it has worked.
+  const here = location.host || 'this page';
+  function renderEntry(kind, e, fresh) {
+    const li = doc.createElement('li');
+    if (kind === 'links') {
+      const a = doc.createElement('a'); a.href = e.href; a.textContent = clip(e.text, 60); a.title = e.href; li.append(a);
+    } else if (kind === 'quotes') {
+      const q = doc.createElement('q'); q.textContent = clip(e.text, 240); li.append(q);
+    } else {
+      const s1 = doc.createElement('span'); s1.className = 'eaten'; s1.textContent = e.words.join(' · ') + ' →';
+      const wr = doc.createElement('span'); wr.className = 'wrote';
+      li.append(s1, wr);
+    }
+    if (e.from && e.from !== here) { const f = doc.createElement('span'); f.className = 'from'; f.textContent = '· ' + e.from; li.append(f); }
+    if (!fresh) li.style.animation = 'none';
+    addEntry(kind, li);
+    const wr = li.querySelector('.wrote');
+    if (wr) { if (fresh) typeOut(wr, e.text); else wr.textContent = e.text; }
+  }
+  function remember(kind, e) {
+    e = { ...e, from: here, at: Date.now() };
+    entries[kind].unshift(e);
+    if (entries[kind].length > 60) entries[kind].length = 60;
+    renderEntry(kind, e, true);
+    store.set('ledger', entries);
+  }
+  store.get('ledger').then((saved) => {
+    if (!saved || destroyed) return;
+    for (const kind of ['links', 'quotes', 'lines']) {
+      const list = (saved[kind] || []).filter((e) => e && (typeof e === 'object'));
+      entries[kind] = list.concat(entries[kind]).slice(0, 60);
+      for (const e of list.slice(0, 30).reverse()) renderEntry(kind, e, false);
+    }
+  });
 
   function copyLedger(btn) {
     const L = [`${name}'s ledger — ${doc.title}`, location.href, ''];
     if (entries.links.length) { L.push('Links:'); for (const e of entries.links) L.push(`- ${e.text} — ${e.href}`); L.push(''); }
-    if (entries.quotes.length) { L.push('Quotes:'); for (const q of entries.quotes) L.push(`- “${q}”`); L.push(''); }
+    if (entries.quotes.length) { L.push('Quotes:'); for (const q of entries.quotes) L.push(`- “${q.text}”${q.from ? ' (' + q.from + ')' : ''}`); L.push(''); }
     if (entries.lines.length) { L.push('Written:'); for (const l of entries.lines) L.push(`- ${l.words.join(' · ')} → ${l.text}`); }
     const text = L.join('\n');
     (win.navigator.clipboard?.writeText(text) || Promise.reject()).catch(() => {
@@ -204,17 +248,36 @@ export function createWorker({ crawler, world, predictor = null, name = 'Crawler
   // ---- page marks (all reversible) -------------------------------------------
   const marks = new Set(); // elements we gave cw-torn / cw-bitten
   const knocked = new Set(); // words we pushed
-  // Bites and tears heal after a while so the page stays readable.
-  function markEl(el, cls) {
-    const m = [el, cls];
-    el.classList.add(cls); marks.add(m);
-    setTimeout(() => { if (marks.delete(m)) el.classList.remove(cls); }, cls === 'cw-torn' ? 90000 : 45000);
+  // Marks stay: this is its version of the page, saved and replayed on the
+  // next visit (page-layer.js). "Original" peeks underneath, "Mend" forgets.
+  function markEl(el, cls, record = true) {
+    el.classList.add(cls); marks.add([el, cls]);
+    if (!record) return;
+    if (cls === 'cw-torn') pageLayer.recordTear(el); else pageLayer.recordBite(el);
   }
-  function mendAll() {
+  function knock(w, t, o, record = true) {
+    w.classList.add('cw-knocked');
+    w.style.transform = t;
+    w.style.opacity = String(o);
+    knocked.add(w);
+    if (record) pageLayer.recordKnock(w, t, o);
+  }
+  function unmark() {
     for (const [el, cls] of marks) el.classList.remove(cls);
     marks.clear();
     unknock([...knocked]);
+    doc.documentElement.classList.remove('cw-original');
   }
+  function mendAll() { unmark(); pageLayer.clear(); ledger.querySelector('[data-do="original"]')?.setAttribute('aria-pressed', 'false'); }
+  const pageLayer = createPageLayer({
+    store, world, doc,
+    onApply(el, op) {
+      if (op.k === 'tear') markEl(el, 'cw-torn', false);
+      else if (op.k === 'bite') markEl(el, 'cw-bitten', false);
+      else if (op.k === 'knock') knock(el, op.t, op.o, false);
+    },
+  });
+  pageLayer.ready.then((n) => { if (n && !destroyed) status(`back where it left off: ${n} marks on this page`); });
   function unknock(list) {
     for (const w of list) { w.style.transform = ''; w.style.opacity = ''; knocked.delete(w); setTimeout(() => w.classList.remove('cw-knocked'), 400); }
     setTimeout(() => { if (!destroyed) world.reflow?.(); }, 450);
@@ -365,11 +428,7 @@ export function createWorker({ crawler, world, predictor = null, name = 'Crawler
     await haul(tok, () => {
       const href = link.href || link.el.getAttribute('href') || '#';
       const abs = (() => { try { return new URL(href, location.href).href; } catch { return href; } })();
-      entries.links.unshift({ text, href: abs });
-      const li = doc.createElement('li');
-      const a = doc.createElement('a'); a.href = abs; a.textContent = clip(text, 60); a.title = abs;
-      li.append(a);
-      addEntry('links', li);
+      remember('links', { text, href: abs });
     }, `filing “${clip(text, 24)}”`);
   }
 
@@ -405,14 +464,7 @@ export function createWorker({ crawler, world, predictor = null, name = 'Crawler
       await wait(200, tok);
     }
     await haul(tok, () => {
-      const text = writeLine(eaten);
-      entries.lines.unshift({ words: eaten, text });
-      const li = doc.createElement('li');
-      const s = doc.createElement('span'); s.className = 'eaten'; s.textContent = eaten.join(' · ') + ' →';
-      const wr = doc.createElement('span'); wr.className = 'wrote';
-      li.append(s, wr);
-      addEntry('lines', li);
-      typeOut(wr, text);
+      remember('lines', { words: eaten, text: writeLine(eaten) });
     }, `writing with “${eaten.join('”, “')}”`);
     return true;
   }
@@ -455,10 +507,7 @@ export function createWorker({ crawler, world, predictor = null, name = 'Crawler
       const side = (Math.sin(hd) * (cx - m.x) - Math.cos(hd) * (cy - m.y)) < 0 ? 1 : -1;
       const push = 10 + Math.random() * 18;
       const dx = -Math.sin(hd) * side * push + Math.cos(hd) * 6, dy = Math.cos(hd) * side * push + Math.sin(hd) * 6;
-      w.classList.add('cw-knocked');
-      w.style.transform = `translate(${dx.toFixed(1)}px, ${dy.toFixed(1)}px) rotate(${((Math.random() - 0.5) * 40).toFixed(1)}deg)`;
-      w.style.opacity = String(0.55 + Math.random() * 0.35);
-      knocked.add(w);
+      knock(w, `translate(${dx.toFixed(1)}px, ${dy.toFixed(1)}px) rotate(${((Math.random() - 0.5) * 40).toFixed(1)}deg)`, +(0.55 + Math.random() * 0.35).toFixed(2));
       plough.hit.push(w);
     }
   }
@@ -501,7 +550,6 @@ export function createWorker({ crawler, world, predictor = null, name = 'Crawler
     plough = null;
     for (const w of hit.slice(0, 6)) world.touch?.(w.dataset.cwId || '', 1);
     status(`broke ${hit.length} words loose`);
-    setTimeout(() => { if (!destroyed) unknock(hit.filter((w) => knocked.has(w))); }, 16000);
     await wait(700, tok);
     return true;
   }
@@ -520,11 +568,7 @@ export function createWorker({ crawler, world, predictor = null, name = 'Crawler
     carried.push(makeTag(clip(sentence, 40), 'quote', centre(item.el)));
     await wait(220, tok);
     await haul(tok, () => {
-      entries.quotes.unshift(sentence);
-      const li = doc.createElement('li');
-      const q = doc.createElement('q'); q.textContent = clip(sentence, 240);
-      li.append(q);
-      addEntry('quotes', li);
+      remember('quotes', { text: sentence, href: location.href });
       if (dock === 'chip' && ledger.classList.contains('is-closed')) {
         toggle(); // show what it brought, then get out of the way
         const t = setTimeout(() => { if (!ledger.classList.contains('is-closed')) toggle(); }, 5000);
@@ -627,6 +671,60 @@ export function createWorker({ crawler, world, predictor = null, name = 'Crawler
     queued = hit;
   }));
 
+  // ---- keep a copy: the mutated page as its own file -------------------------------------
+  // Scripts are stripped, our marks and their styles are kept, and the copy boots
+  // the same creature again when opened, so it keeps living in its version.
+  function keepCopy(btn) {
+    const root = doc.documentElement.cloneNode(true);
+    root.classList.remove('cw-original');
+    root.querySelectorAll('script, noscript, iframe, [data-cw-ui], .cw-threads, .' + uiClass).forEach((n) => n.remove());
+    root.querySelectorAll('.fx-hl, .fx-press, .fx-pulse').forEach((n) => n.classList.remove('fx-hl', 'fx-press', 'fx-pulse'));
+    const head = root.querySelector('head') || root.insertBefore(doc.createElement('head'), root.firstChild);
+    if (!head.querySelector('base')) { const b = doc.createElement('base'); b.href = location.href; head.prepend(b); }
+    const st = doc.createElement('style');
+    st.textContent = `:root { --cw-ink: ${ink}; --cw-paper: ${paper}; --cw-hot: ${hot}; }\n.w { display: inline-block; }\n` + CSS;
+    head.append(st);
+    const when = new Date().toLocaleString();
+    const stamp = doc.createElement('div');
+    stamp.setAttribute('style', `position:fixed;left:10px;bottom:10px;z-index:2147483600;font:11px/1.3 ui-monospace,Menlo,monospace;background:${paper};color:${ink};border:1px solid ${ink};padding:4px 8px;box-shadow:2px 2px 0 ${ink}`);
+    stamp.textContent = `${name}'s copy · ${when} · from ${location.href}`;
+    root.querySelector('body')?.append(stamp);
+    if (seed != null) {
+      const sc = doc.createElement('script'); sc.type = 'module';
+      sc.src = loaderUrl + '?seed=' + encodeURIComponent(String(seed));
+      root.querySelector('body')?.append(sc);
+    }
+    const html = '<!doctype html>\n' + root.outerHTML;
+    const url = URL.createObjectURL(new Blob([html], { type: 'text/html' }));
+    const a = doc.createElement('a');
+    a.href = url;
+    a.download = `${(doc.title || location.host).replace(/[\\/:*?"<>|]+/g, ' ').slice(0, 80)} (${name}'s copy).html`;
+    doc.body.append(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 20000);
+    btn.textContent = 'Saved'; setTimeout(() => { btn.textContent = 'Keep a copy'; }, 1800);
+    status('kept a copy of its version of this page');
+  }
+
+  // ---- crossing pages ---------------------------------------------------------------------
+  // Follow a link and it comes with you: it enters the next page from where you clicked.
+  function onLinkClick(e) {
+    const a = e.target.closest?.('a[href]');
+    if (!a || a.closest('[data-cw-ui]') || e.defaultPrevented || e.button || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+    if (a.target && a.target !== '_self') return;
+    store.set('arrive', { x: e.clientX / win.innerWidth, t: Date.now(), from: pageKey(location), host: location.host, carrying: clean(a.textContent).slice(0, 40) });
+  }
+  doc.addEventListener('click', onLinkClick, true);
+  store.get('arrive').then((a) => {
+    if (!a || destroyed || Date.now() - a.t > 20000 || a.from === pageKey(location)) return;
+    store.set('arrive', null);
+    const B = world.bounds();
+    const x = Math.min(B.x + B.w - 30, Math.max(B.x + 30, a.x * win.innerWidth));
+    crawler.place(x, B.y + 6, Math.PI / 2);
+    pauseUntil = performance.now() + 2200;
+    goToPoint(x, B.y + Math.min(220, B.h * 0.35), { speed: 1.6 });
+    status(a.host && a.host !== location.host ? `followed you here from ${a.host}` : `followed you through “${clip(a.carrying || 'the link', 24)}”`);
+  });
+
   loop();
 
   function destroy() {
@@ -635,7 +733,9 @@ export function createWorker({ crawler, world, predictor = null, name = 'Crawler
     win.cancelAnimationFrame(raf);
     win.removeEventListener('resize', place);
     offs.forEach((off) => { try { off?.(); } catch { /* already gone */ } });
-    mendAll();
+    doc.removeEventListener('click', onLinkClick, true);
+    pageLayer.destroy();
+    unmark();
     added.forEach((el) => el.remove());
   }
 

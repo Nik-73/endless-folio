@@ -4,12 +4,12 @@
 // it exactly. Shared by the bookmarklet (bookmarklet/loader.js) and the
 // Chrome extension's content script (crawler-extension/).
 
-import { makeRng } from './prng.js?v=20261028160256';
-import { CORPUS } from './corpus.js?v=20261028160256';
-import { createPredictor } from './predictor.js?v=20261028160256';
-import { createEnv } from './env.js?v=20261028160256';
-import { createWorld, resolvePaperColor } from './world.js?v=20261028160256';
-import { createWorker } from './worker.js?v=20261028160256';
+import { makeRng } from './prng.js?v=20261028175358';
+import { CORPUS } from './corpus.js?v=20261028175358';
+import { createPredictor } from './predictor.js?v=20261028175358';
+import { createEnv } from './env.js?v=20261028175358';
+import { createWorld, resolvePaperColor } from './world.js?v=20261028175358';
+import { createWorker } from './worker.js?v=20261028175358';
 
 export const TOP_Z = 2147483000;
 const BLOCK_SEL = 'p, li, dd, dt, blockquote, figcaption, td, th, h1, h2, h3, h4, h5, h6';
@@ -25,9 +25,11 @@ const PAGE_CSS = `
   @keyframes cw-fx-hl { 0% { background-color: color-mix(in srgb, var(--fx-color, #d68a4a) 45%, transparent); } 100% { background-color: transparent; } }
   .fx-linked { text-decoration: underline; text-decoration-color: #d68a4a; text-underline-offset: 0.2em; }
   .fx-pulse { animation: cw-fx-pulse 0.9s ease-out; }
+  .fx-press { animation: cw-fx-press .42s cubic-bezier(.2,.7,.2,1); }
+  @keyframes cw-fx-press { 0% { translate: 0 1.5px; scale: .97; filter: brightness(.6) contrast(1.4); } 100% { translate: 0 0; scale: 1; filter: none; } }
   @keyframes cw-fx-pulse { 30% { transform: scale(1.025) rotate(-0.6deg); } }
   .cw-canvas { position: fixed; left: 0; top: 0; width: 100vw; height: 100vh; height: 100lvh; pointer-events: none; }
-  @media (prefers-reduced-motion: reduce) { .fx-hl, .fx-pulse { animation: none; } }
+  @media (prefers-reduced-motion: reduce) { .fx-hl, .fx-pulse, .fx-press { animation: none; } }
 `;
 
 /**
@@ -39,7 +41,7 @@ const PAGE_CSS = `
  * @param {string} [o.rngLabel]
  * @param {object} [o.crawlerOptions] passed through to createCrawler
  */
-export async function attachToPage({ seed, createCrawler, uiClass = 'cw-bm-ui', canvasClass = '', rngLabel = 'host:' + location.host, crawlerOptions = {}, attrPrefix = 'cw', work = true, name = 'Crawler' }) {
+export async function attachToPage({ seed, createCrawler, uiClass = 'cw-bm-ui', canvasClass = '', rngLabel = 'host:' + location.host, crawlerOptions = {}, attrPrefix = 'cw', work = true, name = 'Crawler', store = undefined, seedLabel = undefined }) {
   const attr = (k) => 'data-' + attrPrefix + '-' + k; // e.g. data-cw-id
   const BLOCK_KEY = attrPrefix + 'Block', ID_KEY = attrPrefix + 'Id';
   const rng = makeRng(seed).fork(rngLabel);
@@ -119,18 +121,44 @@ export async function attachToPage({ seed, createCrawler, uiClass = 'cw-bm-ui', 
   const predictor = createPredictor(CORPUS, { rng: rng.fork('predictor') });
   world = createWorld({ root: document.body, env, predictor, rng: rng.fork('world'), threadZ: TOP_Z - 1, paperColor: resolvePaperColor(document.body), attrPrefix });
 
-  const crawler = await createCrawler({ seed, canvas, world, startAwake: true, scale: innerWidth <= 600 ? 1.15 : 1.4, ...crawlerOptions }); // alive on arrival
+  const crawler = await createCrawler({ seed, canvas, world, startAwake: true, scale: innerWidth <= 600 ? 1.3 : 1.7, ...crawlerOptions }); // alive on arrival
   crawler?.start?.();
 
   // Give it work: tear out links, eat and write, fetch what you tap (worker.js).
   const worker = work && crawler && 'mouth' in crawler
-    ? createWorker({ crawler, world, predictor, name, z: TOP_Z - 3, uiClass, colors: { ink: '#1d1915', paper: '#fbf7ee', hot: '#c2410c' } })
+    ? createWorker({ crawler, world, predictor, name, z: TOP_Z - 3, uiClass, store, seed: seedLabel ?? seed, colors: { ink: '#1d1915', paper: '#fbf7ee', hot: '#c2410c' } })
     : null;
+
+  // The site's own fixed and sticky bars sit above the page; the creature walks
+  // underneath them instead of floating over everything.
+  function occlude() {
+    if (destroyed) return;
+    const vw = innerWidth, vh = innerHeight;
+    let top = 0, bottom = 0;
+    for (const el of document.body.querySelectorAll('*')) {
+      if (el.closest('[data-cw-ui], .' + uiClass)) continue;
+      const pos = getComputedStyle(el).position;
+      if (pos !== 'fixed' && pos !== 'sticky') continue;
+      const r = el.getBoundingClientRect();
+      if (r.width < vw * 0.5 || r.height < 8 || r.height > vh * 0.3) continue;
+      if (r.top <= 2 && r.bottom > 0) top = Math.max(top, r.bottom);
+      else if (r.bottom >= vh - 2 && r.top < vh) bottom = Math.max(bottom, vh - r.top);
+    }
+    canvas.style.clipPath = top || bottom ? `inset(${Math.round(top)}px 0 ${Math.round(bottom)}px 0)` : '';
+  }
+  let occT = 0;
+  const onScrollOcc = () => { clearTimeout(occT); occT = setTimeout(occlude, 120); };
+  addEventListener('scroll', onScrollOcc, { passive: true });
+  addEventListener('resize', onScrollOcc);
+  setTimeout(occlude, 300);
 
   let destroyed = false;
   function destroy() {
     if (destroyed) return;
     destroyed = true;
+    removeEventListener('scroll', onScrollOcc);
+    removeEventListener('resize', onScrollOcc);
+    clearTimeout(occT);
     worker?.destroy();
     crawler?.destroy?.();
     world.destroy();

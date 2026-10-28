@@ -7,7 +7,7 @@
 //
 // See ../WORLD_API.md for the contract.
 
-import { createThreadLayer } from './fx-layer.js?v=20261028160256';
+import { createThreadLayer } from './fx-layer.js?v=20261028175358';
 
 const KINDS = ['word', 'link', 'image', 'block'];
 
@@ -286,6 +286,18 @@ export function createWorld({ root, env, predictor, rng, threadMount, threadZ = 
     return () => el.classList.remove('fx-pulse');
   }
 
+  // A foot's weight: the word dips for a moment. Uses the `translate` property,
+  // so it never fights a word's own transform (knocked or scattered words).
+  function press(it) {
+    const el = it.el;
+    el.classList.remove('fx-press');
+    void el.offsetWidth;
+    el.classList.add('fx-press');
+    clearTimeout(timers.get(el));
+    timers.set(el, setTimeout(() => el.classList.remove('fx-press'), 420));
+    return () => el.classList.remove('fx-press');
+  }
+
   function applyEffect(type, target, opts = {}) {
     if (type === 'clear') {
       threads.clear();
@@ -309,6 +321,7 @@ export function createWorld({ root, env, predictor, rng, threadMount, threadZ = 
       case 'gather': gather(a); undo = () => {}; break;
       case 'fade': undo = fade(a, opts); touch(a, 1.5); break;
       case 'pulse': undo = pulse(a); break;
+      case 'press': undo = press(a); return { type, ids: [a.id], undo };
       default: console.warn('[world] unknown effect', type); return null;
     }
     const ids = b ? [a.id, b.id] : [a.id];
@@ -325,7 +338,7 @@ export function createWorld({ root, env, predictor, rng, threadMount, threadZ = 
     get paperColor() { return typeof paperColor === 'function' ? paperColor() : paperColor || (paperColor = resolvePaperColor(root)); },
     /** Extra tap radius around a creature, by pointer type (mouse/pen/touch). Also on each tap event as `pad`. */
     tapPad: env.tapPad,
-    effects: ['highlight', 'connect', 'scatter', 'gather', 'fade', 'pulse', 'clear'],
+    effects: ['highlight', 'connect', 'scatter', 'gather', 'fade', 'pulse', 'press', 'clear'],
     kinds: KINDS,
     viewport: env.viewport,
     pointer: env.pointer,

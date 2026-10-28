@@ -1,19 +1,19 @@
 // Public entry point. See ../API.md.
 //
-//   import { createCrawler } from './crawler-engine/src/index.js?v=20261028160256';
+//   import { createCrawler } from './crawler-engine/src/index.js?v=20261028175358';
 //   const c = createCrawler({ seed: 42, canvas, world });
 //   c.start();
-import { Crawler } from './crawler.js?v=20261028160256';
-import { getStage } from './stage.js?v=20261028160256';
-import { adaptWorld, isFolioWorld } from './world-adapter.js?v=20261028160256';
-import { installAudioUnlock, adoptAudio, audio } from './audio.js?v=20261028160256';
-import { generateTraits, toAttributes, TRAITS_VERSION } from './traits.js?v=20261028160256';
-import { sizeFloorScale, presence } from './size.js?v=20261028160256';
+import { Crawler } from './crawler.js?v=20261028175358';
+import { getStage } from './stage.js?v=20261028175358';
+import { adaptWorld, isFolioWorld } from './world-adapter.js?v=20261028175358';
+import { installAudioUnlock, adoptAudio, audio } from './audio.js?v=20261028175358';
+import { generateTraits, toAttributes, TRAITS_VERSION } from './traits.js?v=20261028175358';
+import { sizeFloorScale, presence } from './size.js?v=20261028175358';
 
 export { generateTraits, toAttributes, TRAITS_VERSION, audio, presence, sizeFloorScale };
-export { createStubWorld } from './stub-world.js?v=20261028160256';
+export { createStubWorld } from './stub-world.js?v=20261028175358';
 
-export const ENGINE_VERSION = '0.4.0';
+export const ENGINE_VERSION = '0.5.0';
 
 /**
  * Create a creature on a canvas. Several creatures may share one canvas.
@@ -23,7 +23,7 @@ export function createCrawler({
   seed, canvas, world = null,
   x, y, heading, scale = 1,
   startAwake = true, sound = true, debug = false,
-  pointerTarget = null, tapToSteer = true, bounds = null, insets = null, sizeFloor = true, look = 'wire',
+  pointerTarget = null, tapToSteer = true, bounds = null, insets = null, sizeFloor = true, look = 'filigree',
 } = {}) {
   if (seed === undefined || seed === null) throw new Error('createCrawler: seed is required');
   if (!canvas || !canvas.getContext) throw new Error('createCrawler: canvas is required');
@@ -41,7 +41,7 @@ export function createCrawler({
 
   const offs = [];
   if (sound) offs.push(...connectAudio(world));
-  if (engineWorld?.footstep) offs.push(crawler.on('footstep', (e) => { if (!crawler.asleep) engineWorld.footstep(e.x, e.y, crawler); }));
+  if (engineWorld?.footstep) offs.push(crawler.on('footstep', (e) => { if (!crawler.asleep) engineWorld.footstep(e.x, e.y, crawler, e.hold); }));
 
   const handle = {
     seed: crawler.seed,

@@ -3,9 +3,10 @@
 //
 // Coordinates are canvas CSS pixels, time is seconds. Nothing here allocates
 // per frame on the hot path (legs, segments and prints are reused).
-import { generateTraits } from './traits.js?v=20261028160256';
-import { createRng } from './rng.js?v=20261028160256';
-import { Voice } from './audio.js?v=20261028160256';
+import { generateTraits } from './traits.js?v=20261028175358';
+import { createRng } from './rng.js?v=20261028175358';
+import { Voice } from './audio.js?v=20261028175358';
+import { drawFiligree } from './filigree.js?v=20261028175358';
 
 const TAU = Math.PI * 2, DEG = Math.PI / 180;
 const clamp = (x, lo, hi) => (x < lo ? lo : x > hi ? hi : x);
@@ -27,7 +28,7 @@ export class Crawler {
     this.bounds = opts.bounds || null;
     this.insets = { top: 0, right: 0, bottom: 0, left: 0, ...(opts.insets || {}) };
     this.debug = !!opts.debug;
-    this.look = opts.look === 'riso' ? 'riso' : 'wire'; // render style only; traits are untouched
+    this.look = ['riso', 'wire'].includes(opts.look) ? opts.look : 'filigree'; // render style only; traits are untouched
     this.rng = createRng(T.seed + ':life');
     this.scale = opts.scale || 1;
     const U = (this.U = T.body.unit * this.scale);
@@ -796,6 +797,13 @@ export class Crawler {
   _land(l, speedK) {
     const L = this.legs, G = this.traits.gait;
     l.swing = false; l.lift = 0; l.fx = l.tx; l.fy = l.ty;
+    l.hold = null;
+    if (this.world?.footHold && this.state === 'awake') {
+      try {
+        const g = this.world.footHold(l.fx, l.fy, this.U * 1.6);
+        if (g) { l.fx = g.x; l.fy = g.y; l.hold = g.id; }
+      } catch { /* bare paper */ }
+    }
     switch (G.name) {
       case 'tripod': L[l.contra].excite = 0.8; if (l.back >= 0) L[l.back].excite = 0.6; break;
       case 'tetrapod': if (l.back >= 0) L[l.back].excite = 0.7; break;
@@ -806,7 +814,7 @@ export class Crawler {
     this.prints[i * 3] = l.fx; this.prints[i * 3 + 1] = l.fy; this.prints[i * 3 + 2] = this.time;
     const intensity = this.state === 'asleep' ? 0.05 : 0.15 + speedK * 0.85;
     this.voice?.footstep(l.idx, intensity);
-    if (this.listeners.has('footstep')) this._emit('footstep', { leg: l.idx, x: l.fx, y: l.fy, intensity });
+    if (this.listeners.has('footstep')) this._emit('footstep', { leg: l.idx, x: l.fx, y: l.fy, intensity, hold: l.hold });
   }
 
   _ik(l) {
@@ -833,6 +841,7 @@ export class Crawler {
 
   draw(ctx) {
     if (!this.placed) return;
+    if (this.look === 'filigree') { drawFiligree(this, ctx); if (this.debug) this._drawDebug(ctx); return; }
     const T = this.traits, pal = T.palette, legs = this.legs, segs = this.segs, t = this.time;
     const sleepy = this.sleepK;
 

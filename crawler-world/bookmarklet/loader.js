@@ -6,12 +6,12 @@
 // restores the page text. The page plumbing lives in ../src/host-page.js,
 // shared with the Chrome extension.
 
-import { parseSeed } from '../src/prng.js?v=20261028160256';
-import { attachToPage, TOP_Z } from '../src/host-page.js?v=20261028160256';
-import { createCrawler as createStubCrawler } from '../src/stub-crawler.js?v=20261028160256';
+import { parseSeed } from '../src/prng.js?v=20261028175358';
+import { attachToPage, TOP_Z } from '../src/host-page.js?v=20261028175358';
+import { createCrawler as createStubCrawler } from '../src/stub-crawler.js?v=20261028175358';
 
 const KEY = '__folioBookmarklet';
-const ENGINE_CANDIDATES = ['../../crawler-engine/src/index.js?v=20261028160256', '../../crawler-engine/index.js?v=20261028160256'];
+const ENGINE_CANDIDATES = ['../../crawler-engine/src/index.js?v=20261028175358', '../../crawler-engine/index.js?v=20261028175358'];
 
 if (window[KEY]) {
   window[KEY].destroy();
@@ -31,7 +31,7 @@ async function boot() {
   const createCrawler = await loadEngine(here);
   const raw = here.searchParams.get('seed') || '';
   const name = !raw || /^\d+$/.test(raw) ? `Specimen ${seed}` : raw.charAt(0).toUpperCase() + raw.slice(1);
-  const host = await attachToPage({ seed, createCrawler, canvasClass: 'cw-bm-canvas', rngLabel: 'bookmarklet:' + location.host, name });
+  const host = await attachToPage({ seed, createCrawler, canvasClass: 'cw-bm-canvas', rngLabel: 'bookmarklet:' + location.host, name, seedLabel: raw || seed });
 
   const style = document.createElement('style');
   style.className = 'cw-bm-ui';
