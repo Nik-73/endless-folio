@@ -1,14 +1,14 @@
-import { makeRng, parseSeed, hashString } from './prng.js';
-import { CORPUS } from './corpus.js';
-import { createPredictor } from './predictor.js';
-import { createArticleBuilder } from './article.js';
-import { createEnv } from './env.js';
-import { createWorld } from './world.js';
-import { createCrawler as createStubCrawler } from './stub-crawler.js';
+import { makeRng, parseSeed, hashString } from './prng.js?v=20261028143806';
+import { CORPUS } from './corpus.js?v=20261028143806';
+import { createPredictor } from './predictor.js?v=20261028143806';
+import { createArticleBuilder } from './article.js?v=20261028143806';
+import { createEnv } from './env.js?v=20261028143806';
+import { createWorld } from './world.js?v=20261028143806';
+import { createCrawler as createStubCrawler } from './stub-crawler.js?v=20261028143806';
 
 // Where to look for the real engine. ?engine=stub forces the stub;
 // ?engine=<url> loads a specific module.
-const ENGINE_CANDIDATES = ['../crawler-engine/src/index.js', '../crawler-engine/index.js'];
+const ENGINE_CANDIDATES = ['../crawler-engine/src/index.js?v=20261028143806', '../crawler-engine/index.js?v=20261028143806'];
 const MAX_SECTIONS = 400; // Safety valve on DOM size for very long sessions.
 
 const params = new URLSearchParams(location.search);

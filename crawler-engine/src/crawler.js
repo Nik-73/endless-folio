@@ -3,9 +3,9 @@
 //
 // Coordinates are canvas CSS pixels, time is seconds. Nothing here allocates
 // per frame on the hot path (legs, segments and prints are reused).
-import { generateTraits } from './traits.js';
-import { createRng } from './rng.js';
-import { Voice } from './audio.js';
+import { generateTraits } from './traits.js?v=20261028143806';
+import { createRng } from './rng.js?v=20261028143806';
+import { Voice } from './audio.js?v=20261028143806';
 
 const TAU = Math.PI * 2, DEG = Math.PI / 180;
 const clamp = (x, lo, hi) => (x < lo ? lo : x > hi ? hi : x);

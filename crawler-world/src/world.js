@@ -7,7 +7,7 @@
 //
 // See ../WORLD_API.md for the contract.
 
-import { createThreadLayer } from './fx-layer.js';
+import { createThreadLayer } from './fx-layer.js?v=20261028143806';
 
 const KINDS = ['word', 'link', 'image', 'block'];
 
