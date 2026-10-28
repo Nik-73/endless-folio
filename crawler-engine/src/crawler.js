@@ -86,6 +86,16 @@ export class Crawler {
     this.audioT = 0;
     this.offT = 0; // seconds spent outside the visible roaming area
     this.noSleepUntil = opts.startAwake ? 20 : 0; // first impression: stay up a while
+    this.headTurn = 0; // drawn head/antennae offset from the body axis (rad), toward what it attends to
+    this.aimA = null; // world angle it is looking at, or null
+    this.callMark = null; // {x, y, t}: contracting marker acknowledging a tap
+    this.skitPending = 0; // skittish: a second tap before this time brings it all the way
+    this.wary = null; // skittish after a partial call: {x, y, until}
+    this.orbitDir = this.rng.sign(); this.orbitT = this.rng.range(2, 4);
+    this.lastScrollAt = -1e9;
+    this.sprintUntil = 0; this.abseil = false;
+    this.lastRead = 0;
+    this.readUrge = 2.5 + (1 - T.temperament.curiosity) * 3; // s between reading chains while roaming
 
     // --- look
     const pa = T.print.angle * DEG;
@@ -141,6 +151,32 @@ export class Crawler {
   }
   clearTarget() { this.goal = null; }
 
+  /**
+   * Tap-to-call. Acknowledged on the same frame (head snaps toward the tap,
+   * chirp, contracting marker), then a fast walk over. Skittish creatures come
+   * 60% of the way and freeze, facing you; a second tap brings them all the way.
+   */
+  call(x, y) {
+    const wasAsleep = this.asleep;
+    this.wake('call');
+    if (!wasAsleep) this.voice?.chirp('wake');
+    const h = this.segs[0], B = this._bounds();
+    const tx = clamp(x, B.x + 6, B.x + B.w - 6), ty = clamp(y, B.y + 6, B.y + B.h - 6);
+    this.aimA = Math.atan2(y - h.y, x - h.x);
+    this.headTurn = clamp(angDiff(h.a, this.aimA), -1.3, 1.3); // snap, no easing
+    this.callMark = { x, y, t: this.time };
+    let gx = tx, gy = ty, partial = false;
+    if (this.traits.temperament.name === 'skittish' && this.time > this.skitPending) {
+      gx = h.x + (tx - h.x) * 0.6; gy = h.y + (ty - h.y) * 0.6; partial = true;
+      this.skitPending = this.time + 6;
+    } else this.skitPending = 0;
+    this.goal = { x: gx, y: gy, until: this.time + 7, call: true, d0: Math.max(1, Math.hypot(gx - h.x, gy - h.y)), partial, fx: x, fy: y };
+    this.engage = null; this.wary = null; this.startle = 0;
+    this.mode = 'called';
+    this.lastStimulus = this.time;
+    this._emit('call', { x, y, partial });
+  }
+
   /** Teleport (e.g. respawn). Re-plants the legs. */
   place(x, y, heading = this.heading) {
     this.heading = heading;
@@ -162,8 +198,14 @@ export class Crawler {
     for (const s of this.segs) { s.x += dx; s.y += dy; s.px += dx; s.py += dy; }
     for (const l of this.legs) { l.fx += dx; l.fy += dy; l.sx += dx; l.sy += dy; }
     for (let i = 0; i < MAX_PRINTS; i++) { this.prints[i * 3] += dx; this.prints[i * 3 + 1] += dy; }
-    if (this.goal) { this.goal.x += dx; this.goal.y += dy; }
-    if (this.engage) { const e = this.engage; e.x0 += dx; e.x1 += dx; e.y0 += dy; e.y1 += dy; }
+    if (this.goal) { this.goal.x += dx; this.goal.y += dy; this.goal.fx += dx; this.goal.fy += dy; }
+    if (this.engage) {
+      const e = this.engage; e.x0 += dx; e.x1 += dx; e.y0 += dy; e.y1 += dy;
+      if (e.words) for (const w of e.words) { w.x += dx; w.y += dy; }
+    }
+    if (this.callMark) { this.callMark.x += dx; this.callMark.y += dy; }
+    if (this.wary) { this.wary.x += dx; this.wary.y += dy; }
+    if (dx || dy) this.lastScrollAt = this.time;
   }
 
   /** Called by the stage on a tap/click that hits the body. */
@@ -267,24 +309,28 @@ export class Crawler {
     const cx = clamp(h.x, I.x, I.x + I.w), cy = clamp(h.y, I.y, I.y + I.h);
     const out = Math.hypot(h.x - cx, h.y - cy);
     this.offT = out > 2 ? this.offT + dt : 0;
-    if (this.state === 'asleep') {
-      // A sleeper that can no longer be seen gets up and comes back.
-      const hidden = h.x < B0.x || h.x > B0.x + B0.w || h.y < B0.y || h.y > B0.y + B0.h;
-      if (hidden && this.offT > 0.8) this.wake('return');
-      else return;
+    // Pushed out of sight by a scroll: once scrolling settles, re-enter from
+    // just past the nearest edge and sprint in (spiders abseil from the top).
+    const hidden = h.x < B0.x || h.x > B0.x + B0.w || h.y < B0.y || h.y > B0.y + B0.h;
+    if (hidden && this.time - this.lastScrollAt > 0.25 && this.time > this.sprintUntil) {
+      if (this.asleep) this.wake('return');
+      this._reenter(B0, I);
     }
+    if (this.state === 'asleep') return;
 
     const ptr = this._pointer();
     const attention = tm.senseRadius * 1.8 + this.length;
     const fear = tm.senseRadius * 1.1 + this.length;
     let dirX = 0, dirY = 0, spd = 0, followMode = false;
 
-    if (out > (ptr && ptr.d < tm.senseRadius * 2 ? 40 : 4) && this.startle >= 0 && !(ptr && ptr.down)) { // walk back into view
+    const answering = this.goal?.call && !hidden; // a call may take it to the very edge of the column
+    if (!answering && out > (ptr && ptr.d < tm.senseRadius * 2 ? 40 : 4) && this.startle >= 0 && !(ptr && ptr.down)) { // walk back into view
       if (this.engage && !this._inView(this.engage.x0, this.engage.y0, I)) this.engage = null;
       this.goal = null;
       this.mode = 'return';
       this.lastStimulus = this.time;
       dirX = cx - h.x; dirY = cy - h.y; spd = clamp(0.55 + out / 200, 0.55, 1.1);
+      if (this.time < this.sprintUntil) spd = Math.max(1.4, 110 / this.maxSpeed);
     } else if (this.startle > 0) { // jump away from a poke
       this.startle = Math.max(0, this.startle - dt);
       dirX = Math.cos(this.startleDir); dirY = Math.sin(this.startleDir); spd = 1.4;
@@ -292,9 +338,24 @@ export class Crawler {
       this.startle = Math.min(0, this.startle + dt);
       dirX = -Math.cos(this.startleDir); dirY = -Math.sin(this.startleDir); spd = 0.05;
     } else if (this.goal) {
-      const dx = this.goal.x - h.x, dy = this.goal.y - h.y, d = Math.hypot(dx, dy);
-      if (d < 6 || this.time > this.goal.until) this.goal = null;
-      dirX = dx; dirY = dy; spd = clamp(d / 80, 0.15, 1);
+      const g = this.goal, dx = g.x - h.x, dy = g.y - h.y, d = Math.hypot(dx, dy);
+      dirX = dx; dirY = dy;
+      if (g.call) {
+        // Fast for the first 60% of the way, then ease in (never crawl).
+        this.mode = 'called';
+        const fast = Math.max(1.35, 120 / this.maxSpeed);
+        spd = 1 - d / g.d0 < 0.6 ? fast : Math.min(fast, Math.max(30, d * 2.2) / this.maxSpeed);
+        this.aimA = Math.atan2(g.fy - h.y, g.fx - h.x);
+      } else spd = clamp(d / 80, 0.15, 1);
+      if (d < 6 || this.time > g.until) {
+        this.goal = null;
+        if (g.partial) { this.wary = { x: g.fx, y: g.fy, until: this.time + 1.5 }; this.skitPending = Math.max(this.skitPending, this.time + 3); }
+      }
+      this.lastStimulus = this.time;
+    } else if (this.wary && this.time < this.wary.until) { // skittish: stop short, face the tap, freeze
+      this.mode = 'wary';
+      dirX = this.wary.x - h.x; dirY = this.wary.y - h.y; spd = 0;
+      this.aimA = Math.atan2(dirY, dirX);
       this.lastStimulus = this.time;
     } else if (ptr && ptr.d < (ptr.touch ? attention * 1.4 : attention)) {
       this.lastStimulus = this.time;
@@ -302,20 +363,35 @@ export class Crawler {
       const bold = tm.boldness + (ptr.down ? 0.5 : 0);
       if (bold < 0.35 && ptr.d < fear) {
         this.mode = 'flee'; this.engage = null;
-        dirX = -ptr.dx; dirY = -ptr.dy; spd = 1.25;
+        dirX = -ptr.dx / ptr.d; dirY = -ptr.dy / ptr.d; spd = 1.25;
+        // cornered: slide sideways, toward open space
+        const ccx = I.x + I.w / 2 - h.x, ccy = I.y + I.h / 2 - h.y, side = dirX * ccy - dirY * ccx > 0 ? 1 : -1;
+        if (out > 0 || h.x < I.x + 30 || h.x > I.x + I.w - 30 || h.y < I.y + 30 || h.y > I.y + I.h - 30) { dirX += -dirY * side * 1.2; dirY += dirX * side * 1.2; }
       } else if (bold > 0.55) {
         this.mode = 'follow'; this.engage = null; followMode = true;
         const stop = this.length * 0.5 + 8;
         if (ptr.d > stop) { dirX = ptr.dx; dirY = ptr.dy; spd = clamp((ptr.d - stop) / 120, 0.2, 1); }
         else { dirX = -ptr.dy; dirY = ptr.dx; spd = 0.22; } // circle under the pointer
-      } else if (!this.engage) {
-        this.mode = 'watch';
-        const keep = 90 + this.length;
-        dirX = ptr.dx; dirY = ptr.dy;
-        spd = ptr.d > keep ? 0.35 * tm.curiosity : ptr.d < keep * 0.6 ? 0 : 0;
-        if (ptr.d < keep * 0.6) { dirX = ptr.dx; dirY = ptr.dy; } // just face it
+      } else if (bold < 0.35) { // timid, not yet frightened: freeze and stare
+        this.mode = 'watch'; this.engage = null;
+        dirX = ptr.dx; dirY = ptr.dy; spd = 0;
+      } else { // middle temperaments: come to a keep ring, then orbit and watch
+        this.mode = 'watch'; this.engage = null;
+        const ring = 70 + 0.5 * this.length;
+        const P = this.stage.ptr, toward = ptr.d > 1 ? -(P.vx * ptr.dx + P.vy * ptr.dy) / ptr.d : 0;
+        if (toward > 600 && ptr.d < ring && tm.boldness < 0.8) { // hop back from a fast lunge
+          this.startle = 0.25; this.startleDir = Math.atan2(-ptr.dy, -ptr.dx);
+        }
+        if ((this.orbitT -= dt) <= 0) { this.orbitDir = -this.orbitDir; this.orbitT = r.range(2, 4); }
+        if (ptr.d > ring + 12) { dirX = ptr.dx; dirY = ptr.dy; spd = Math.max(0.4, 26 / this.maxSpeed); }
+        else if (ptr.d < ring - 18) { dirX = -ptr.dx; dirY = -ptr.dy; spd = Math.max(0.25, 18 / this.maxSpeed); }
+        else {
+          const k = (ptr.d - ring) / 30; // small radial correction keeps it on the ring
+          dirX = -ptr.dy * this.orbitDir + ptr.dx * k; dirY = ptr.dx * this.orbitDir + ptr.dy * k;
+          spd = Math.max(0.15, 10 / this.maxSpeed);
+        }
       }
-    } else if (this.mode === 'flee' || this.mode === 'follow' || this.mode === 'watch' || this.mode === 'return') {
+    } else if (this.mode === 'flee' || this.mode === 'follow' || this.mode === 'watch' || this.mode === 'return' || this.mode === 'called' || this.mode === 'wary') {
       this.mode = 'roam';
       this.wanderBase = this.heading;
     }
@@ -346,8 +422,17 @@ export class Crawler {
     // sensing the page
     if (this.world && (this.senseT -= dt) <= 0) {
       this.senseT = 0.28 + r.next() * 0.22;
-      if (!this.engage && !followMode && !this.goal && this.startle === 0 && this.mode !== 'return') this._sense();
+      const busy = this.mode === 'return' || this.mode === 'watch' || this.mode === 'called' || this.mode === 'wary';
+      if (!this.engage && !followMode && !this.goal && this.startle === 0 && !busy) this._sense();
     }
+
+    // What it attends to: a call or the pointer, else the word it is reading.
+    if (this.mode === 'called' || this.mode === 'wary') { /* aimA set above */ }
+    else if (ptr && ptr.d < attention * 1.4 && this.mode !== 'flee') this.aimA = Math.atan2(ptr.dy, ptr.dx);
+    else if (this.engage?.words) { const w = this.engage.words[Math.min(this.engage.idx, this.engage.words.length - 1)]; this.aimA = Math.atan2(w.y + w.h / 2 - h.y, w.x + w.w / 2 - h.x); }
+    else this.aimA = null;
+    const want = this.aimA === null ? 0 : clamp(angDiff(h.a, this.aimA), -0.9, 0.9);
+    this.headTurn += (want - this.headTurn) * Math.min(1, dt * 9);
 
     // edges + neighbours
     const B = this._bounds(), m = 36 + this.length * 0.35;
@@ -369,8 +454,10 @@ export class Crawler {
     dirX = dirX / dl + ex * ew; dirY = dirY / dl + ey * ew;
     if ((ex || ey) && spd === 0 && this.mode === 'roam') spd = 0.3; // never sulk in a corner
     if (this.mode === 'return') { dirX = cx - h.x; dirY = cy - h.y; } // edges must not fight the return
+    if (this.mode === 'called') { dirX = this.goal ? this.goal.x - h.x : dirX; dirY = this.goal ? this.goal.y - h.y : dirY; }
     if ((ex || ey) && this.mode === 'roam') this.wanderBase = Math.atan2(dirY, dirX);
     this.desired = Math.atan2(dirY, dirX);
+    if (spd < 0.05 && this.yaw && this.mode !== 'roam') this.desired -= this.yaw; // crab-walkers turn their face, not their path
     this.targetSpeed = spd * this.maxSpeed;
   }
 
@@ -390,9 +477,59 @@ export class Crawler {
       const score = pref * clamp(1 - d / (tm.senseRadius * 1.6), 0.1, 1);
       if (score > bestScore) { best = it; bestScore = score; }
     }
+    // It reads: every few seconds of roaming, the nearest line of text wins.
+    if (this.mode !== 'flee' && this.time - this.lastRead > this.readUrge && this._startReading(items, inner)) return;
     if (!best) return;
     const p = this.mode === 'flee' ? 1 : tm.curiosity * bestScore * 0.22;
-    if (this.rng.next() < p) this._startEngage(best);
+    if (this.rng.next() < p) {
+      if (best.type === 'text') this._startReading(items, inner); // text is always read along the line
+      else this._startEngage(best);
+    }
+  }
+
+  /** Words following `start` on the same line, in reading order, up to `max`, stopping at . ; : ! ? */
+  _lineChain(start, max, pool) {
+    const cy = start.y + start.h / 2, chain = [start];
+    if (/[.;:!?]["'’”)]*$/.test(start.text || '')) return chain;
+    const line = pool.filter((it) => it.type === 'text' && it.id !== start.id && Math.abs(it.y + it.h / 2 - cy) < 4 && it.x > start.x).sort((a, b) => a.x - b.x);
+    let prev = start;
+    for (const it of line) {
+      if (chain.length >= max) break;
+      if (it.id === prev.id) continue;
+      if (it.x - (prev.x + prev.w) > 40) break;
+      chain.push(it); prev = it;
+      if (/[.;:!?]["'’”)]*$/.test(it.text || '')) break;
+    }
+    return chain;
+  }
+
+  _startReading(items, inner) {
+    const tm = this.traits.temperament, h = this.segs[0];
+    const max = 3 + Math.round(tm.curiosity * 4);
+    // Look a little further than the sense radius for a line worth reading.
+    for (const R of [Math.max(240, tm.senseRadius * 1.8), 520]) { // nothing readable close by? look further
+      try { items = this.world.queryNear(h.x, h.y, R, 160) || items; } catch (e) { break; }
+      if (items.filter((it) => it.type === 'text').length >= 12) break;
+    }
+    const cands = items.filter((it) => it.type === 'text' && (this.cooldown.get(it.id) || 0) <= this.time
+      && this._inView(it.x, it.y + it.h / 2, inner) && this._inView(it.x + it.w, it.y + it.h / 2, inner, 40));
+    if (!cands.length) return false;
+    cands.sort((a, b) => Math.hypot(a.x - h.x, a.y - h.y) - Math.hypot(b.x - h.x, b.y - h.y));
+    let chain = null, best = -Infinity;
+    for (const c of cands.slice(0, 40)) {
+      const ch = this._lineChain(c, max, cands);
+      const score = Math.min(ch.length, max) * 70 - Math.hypot(c.x - h.x, c.y + c.h / 2 - h.y) - (ch.length < 3 ? 400 : 0);
+      if (score > best) { best = score; chain = ch; }
+    }
+    if (chain.length < 2) { this.lastRead = this.time - this.readUrge + 1.2; return false; } // headings and fragments: look again soon
+    const first = chain[0], last = chain[chain.length - 1], y = first.y + first.h * 0.55;
+    const words = chain.map((it) => ({ item: it, x: it.x, y: it.y, w: it.w, h: it.h }));
+    const effect = tm.name === 'glutton' ? 'nibble' : 'read';
+    this.engage = { item: first, words, idx: 0, effect, x0: first.x - 3, y0: y, x1: last.x + last.w + 3, y1: y, phase: 'approach', until: this.time + 7, hold: 0, nextFx: 0 };
+    this.mode = 'engage'; this.moving = true;
+    this.lastRead = this.time;
+    this._emit('engage', { target: first, effect, words: chain });
+    return true;
   }
 
   _startEngage(it) {
@@ -424,20 +561,23 @@ export class Crawler {
       this.cooldown.set(e.item.id, t + this.rng.range(12, 25));
       this.engage = null; this.mode = 'roam'; this.moving = false; this.goT = this.rng.range(0.4, 1.2);
       if (this.cooldown.size > 64) for (const [k, v] of this.cooldown) if (v < t) this.cooldown.delete(k);
-      if ((e.effect === 'perch' || e.effect === 'hide') && this.traits.temperament.name === 'drowsy') this.sleep('perch');
+      if ((e.effect === 'perch' || e.effect === 'hide') && this.traits.temperament.name === 'drowsy' && t - this.lastRead < 8) this.sleep('perch');
       return null;
     };
     if (!this._inView(e.x0, e.y0, this._inner(), 30)) return done(); // scrolled away
+    if (e.words) return this._readStep(e, done);
     if (e.phase === 'approach') {
       const dx = e.x0 - h.x, dy = e.y0 - h.y, d = Math.hypot(dx, dy);
       if (t > e.until) return done();
       if (d < 5 + h.r) {
         e.phase = 'act'; e.until = t + (e.hold || 6);
         this._effect(e.effect, e.item); e.nextFx = t + 0.8;
-      } else return [dx, dy, clamp(d / 60, 0.3, 0.85)];
+      } else return [dx, dy, Math.max(clamp(d / 60, 0.3, 0.85), d > 30 ? 45 / this.maxSpeed : 0)];
     }
     // act
     if (t > e.until) return done();
+    if (e.item.type !== 'text' && t - this.lastRead > this.readUrge + 2.5) return done(); // the page calls
+
     if (e.effect !== 'read' && e.effect !== 'hide' && e.effect !== 'perch' && t > e.nextFx) {
       this._effect(e.effect, e.item); e.nextFx = t + (e.effect === 'nibble' ? 0.9 : 0.6);
     }
@@ -451,26 +591,79 @@ export class Crawler {
     return [Math.cos(a), Math.sin(a), e.effect === 'jostle' || e.effect === 'tug' ? 0.12 : 0.0001];
   }
 
+  /** Walk along the line; each word is read (or eaten) as the head passes it. */
+  _readStep(e, done) {
+    const h = this.segs[0], t = this.time, W = e.words;
+    if (e.phase === 'approach') {
+      const dx = e.x0 - h.x, dy = e.y0 - h.y, d = Math.hypot(dx, dy);
+      if (t > e.until) return done();
+      if (d > 6 + h.r * 0.5) return [dx, dy, Math.max(clamp(d / 60, 0.4, 1.1), Math.min(80, 30 + d) / this.maxSpeed)];
+      e.phase = 'act'; e.until = t + 2 + W.length * 1.5;
+    }
+    while (e.idx < W.length && h.x >= W[e.idx].x + W[e.idx].w * 0.3) this._readWord(e);
+    const dx = e.x1 - h.x, dy = e.y1 - h.y;
+    if (e.idx >= W.length || dx < 3 || t > e.until) {
+      while (e.idx < W.length) this._readWord(e);
+      this._finishChain(e);
+      return done();
+    }
+    return [dx, dy * 3, clamp(this.maxSpeed * 0.55, 34, 70) / this.maxSpeed];
+  }
+
+  _readWord(e) {
+    const w = e.words[e.idx++];
+    this.cooldown.set(w.item.id, this.time + this.rng.range(15, 30));
+    this._effect(e.effect, w.item);
+  }
+
+  _finishChain(e) {
+    const W = e.words, tm = this.traits.temperament;
+    this.lastRead = this.time;
+    if (W.length > 1) this._effect('thread', W[0].item, { to: W[W.length - 1].item });
+    if (tm.effects.text === 'jostle' && this.rng.chance(0.5)) this._effect('jostle', W[W.length - 1].item);
+    this._emit('chain', { words: W.map((w) => w.item), effect: e.effect });
+  }
+
+  _reenter(B, I) {
+    const h = this.segs[0];
+    const cx = clamp(h.x, I.x, I.x + I.w), cy = clamp(h.y, I.y, I.y + I.h);
+    // nearest visible edge, just outside it
+    const out = 2; // head right at the edge, body and legs trailing outside
+    let x = cx, y = cy, edge;
+    const dT = Math.abs(h.y - B.y), dB = Math.abs(h.y - (B.y + B.h)), dL = Math.abs(h.x - B.x), dR = Math.abs(h.x - (B.x + B.w));
+    const m = Math.min(dT, dB, dL, dR);
+    if (m === dT) { y = B.y - out; edge = 'top'; } else if (m === dB) { y = B.y + B.h + out; edge = 'bottom'; }
+    else if (m === dL) { x = B.x - out; edge = 'left'; } else { x = B.x + B.w + out; edge = 'right'; }
+    this.engage = null; this.goal = null;
+    this.place(x, y, Math.atan2(cy - y, cx - x));
+    this.sprintUntil = this.time + 1.2;
+    this.speed = Math.max(this.speed, 90); // arrive moving, not from a standstill
+    this.abseil = edge === 'top' && this.traits.plan === 'spider';
+    this.mode = 'return';
+    this._emit('reenter', { edge });
+  }
+
   _inView(x, y, I, pad = 0) {
     return x >= I.x - pad && x <= I.x + I.w + pad && y >= I.y - pad && y <= I.y + I.h + pad;
   }
 
-  _effect(type, item) {
+  _effect(type, item, extra) {
     const h = this.segs[0];
-    this._emit('effect', { type, target: item });
+    this._emit('effect', { type, target: item, ...extra });
     if (!this.world?.applyEffect) return;
-    try { this.world.applyEffect(type, item, { crawler: this, x: h.x, y: h.y, intensity: this.speed / this.maxSpeed }); }
+    try { this.world.applyEffect(type, item, { crawler: this, x: h.x, y: h.y, intensity: this.speed / this.maxSpeed, ...extra }); }
     catch (err) { console.warn('[crawler] world.applyEffect failed', err); }
   }
 
   _move(dt) {
     const T = this.traits, h = this.segs[0];
     const dA = angDiff(this.heading, this.desired);
-    const maxTurn = T.motion.turn * dt;
+    const urgent = this.mode === 'called' || this.time < this.sprintUntil;
+    const maxTurn = (urgent ? Math.max(8, T.motion.turn * 3) : T.motion.turn) * dt;
     const turn = clamp(dA * Math.min(1, dt * 8), -maxTurn, maxTurn);
     this.heading += turn;
     this.turnVel = turn / (dt || 1 / 60);
-    const turnSlow = 1 - Math.min(0.75, Math.abs(dA) / Math.PI);
+    const turnSlow = 1 - Math.min(urgent ? 0.4 : 0.75, Math.abs(dA) / Math.PI);
     this.speed += (this.targetSpeed * turnSlow * (this.stage?.speedScale ?? 1) - this.speed) * Math.min(1, T.motion.accel * dt);
     if (this.speed < 0.5 && this.targetSpeed === 0) this.speed = 0;
 
@@ -635,16 +828,31 @@ export class Crawler {
       ctx.globalAlpha = 1;
     }
 
+    this._drawMarks(ctx);
+
+    // Paper knockout: legs, spine and body sit on a thin halo of paper so ink
+    // legs don't merge with ink letters underneath.
+    for (const l of legs) this._ik(l);
+    const paper = this._paper();
+    ctx.globalAlpha = 0.9;
+    ctx.strokeStyle = paper; ctx.fillStyle = paper;
+    ctx.lineWidth = T.legs.width + 2.6;
+    ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+    ctx.beginPath();
+    for (const l of legs) { ctx.moveTo(l.hx, l.hy); ctx.lineTo(l.kx, l.ky); ctx.lineTo(l.fx, l.fy); }
+    if (segs.length > 1) { ctx.moveTo(segs[0].x, segs[0].y); for (let i = 1; i < segs.length; i++) ctx.lineTo(segs[i].x, segs[i].y); }
+    ctx.stroke();
+    ctx.beginPath();
+    for (const s of segs) this._shape(ctx, s, 0, 0, 1, 1.6);
+    ctx.fill();
+    ctx.globalAlpha = 1;
+
     // legs
     ctx.strokeStyle = pal.ink;
     ctx.lineWidth = T.legs.width;
-    ctx.lineCap = 'round'; ctx.lineJoin = 'round';
     if (T.legs.style === 'dash') ctx.setLineDash([T.legs.width * 2.2, T.legs.width * 1.6]);
     ctx.beginPath();
-    for (const l of legs) {
-      this._ik(l);
-      ctx.moveTo(l.hx, l.hy); ctx.lineTo(l.kx, l.ky); ctx.lineTo(l.fx, l.fy);
-    }
+    for (const l of legs) { ctx.moveTo(l.hx, l.hy); ctx.lineTo(l.kx, l.ky); ctx.lineTo(l.fx, l.fy); }
     ctx.stroke();
     if (T.legs.style === 'dash') ctx.setLineDash([]);
 
@@ -730,8 +938,37 @@ export class Crawler {
     if (this.debug) this._drawDebug(ctx);
   }
 
-  _shape(ctx, s, ox, oy, k) {
-    const x = s.x + ox, y = s.y + oy, r = s.r * k;
+  _paper() {
+    return this.world?.paperColor || this.stage?.world?.paperColor || '#f2ecdf';
+  }
+
+  /** Tap acknowledgement marker and the spider's abseil thread. */
+  _drawMarks(ctx) {
+    const pal = this.traits.palette, t = this.time;
+    const M = this.callMark;
+    if (M) {
+      const k = (t - M.t) / 0.4;
+      if (k >= 1) this.callMark = null;
+      else {
+        const d = 14 * (1 - k), q = 2.4;
+        ctx.globalAlpha = 1 - k * 0.6;
+        ctx.fillStyle = pal.ink;
+        ctx.fillRect(M.x - d - q / 2, M.y - q / 2, q, q); ctx.fillRect(M.x + d - q / 2, M.y - q / 2, q, q);
+        ctx.fillRect(M.x - q / 2, M.y - d - q / 2, q, q); ctx.fillRect(M.x - q / 2, M.y + d - q / 2, q, q);
+        ctx.globalAlpha = 1;
+      }
+    }
+    if (this.abseil && t < this.sprintUntil) {
+      const s = this.segs[this.segs.length - 1];
+      const bx = s.x - Math.cos(s.a) * s.r, by = s.y - Math.sin(s.a) * s.r;
+      ctx.strokeStyle = pal.ink; ctx.lineWidth = 0.8; ctx.globalAlpha = Math.min(1, (this.sprintUntil - t) * 2);
+      ctx.beginPath(); ctx.moveTo(bx, Math.min(by, this._bounds().y - 40)); ctx.lineTo(bx, by); ctx.stroke();
+      ctx.globalAlpha = 1;
+    }
+  }
+
+  _shape(ctx, s, ox, oy, k, grow = 0) {
+    const x = s.x + ox, y = s.y + oy, r = s.r * k + grow;
     switch (s.shape) {
       case 'block': {
         const c = Math.cos(s.a) * r * 0.9, d = Math.sin(s.a) * r * 0.9;
@@ -751,7 +988,10 @@ export class Crawler {
   }
 
   _drawHead(ctx, sleepy) {
-    const T = this.traits, H = T.head, pal = T.palette, h = this.segs[0], t = this.time;
+    const T = this.traits, H = T.head, pal = T.palette, h0 = this.segs[0], t = this.time;
+    const ha = h0.a + this.headTurn;
+    const h = { x: h0.x, y: h0.y, r: h0.r, a: ha }; // the head looks where it attends
+    const aim = this.aimA;
     const fx = Math.cos(h.a), fy = Math.sin(h.a);
     ctx.strokeStyle = pal.ink; ctx.lineWidth = 1;
     if (H.antennae) {
@@ -760,7 +1000,8 @@ export class Crawler {
       for (const side of [-1, 1]) {
         const sway = Math.sin(t * 3.1 + side) * 0.22 + this.turnVel * 0.05;
         const ba = h.a + side * 0.5, bx = h.x + Math.cos(ba) * h.r * 0.9, by = h.y + Math.sin(ba) * h.r * 0.9;
-        const ta = h.a + side * (0.45 + sleepy * 0.9) + sway;
+        let ta = h.a + side * (0.45 + sleepy * 0.9) + sway;
+        if (aim !== null) ta += angDiff(ta, aim + side * 0.18) * 0.6; // feelers reach toward it
         const ca = h.a + side * 0.2;
         ctx.moveTo(bx, by);
         ctx.quadraticCurveTo(bx + Math.cos(ca) * len * 0.6, by + Math.sin(ca) * len * 0.6, bx + Math.cos(ta) * len, by + Math.sin(ta) * len);
@@ -771,7 +1012,9 @@ export class Crawler {
       for (const side of [-1, 1]) {
         const sway = Math.sin(t * 3.1 + side) * 0.22 + this.turnVel * 0.05;
         const ba = h.a + side * 0.5, bx = h.x + Math.cos(ba) * h.r * 0.9, by = h.y + Math.sin(ba) * h.r * 0.9;
-        const ta = h.a + side * (0.45 + sleepy * 0.9) + sway, x = bx + Math.cos(ta) * len, y = by + Math.sin(ta) * len;
+        let ta = h.a + side * (0.45 + sleepy * 0.9) + sway;
+        if (aim !== null) ta += angDiff(ta, aim + side * 0.18) * 0.6;
+        const x = bx + Math.cos(ta) * len, y = by + Math.sin(ta) * len;
         ctx.moveTo(x + 1.2, y); ctx.arc(x, y, 1.2, 0, TAU);
       }
       ctx.fill();

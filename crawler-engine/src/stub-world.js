@@ -3,7 +3,7 @@
 // (the canvas is expected to overlay root). Effects are CSS classes:
 // .cw-fx-<effect> is added for a moment, nibble dims a word for a while.
 
-export function createStubWorld({ root, canvas, selectors = {} } = {}) {
+export function createStubWorld({ root, canvas, selectors = {}, paperColor = '#f2ecdf' } = {}) {
   const sel = { text: '.w', link: 'a', image: '.img, img', ...selectors };
   let items = [], dirty = true, seq = 0;
 
@@ -48,6 +48,7 @@ export function createStubWorld({ root, canvas, selectors = {} } = {}) {
 
   return {
     kinds: ['text', 'link', 'image'],
+    paperColor,
     /** Items whose box is within `radius` px of (x, y), nearest first. */
     queryNear(x, y, radius) {
       if (dirty) reindex();
@@ -60,7 +61,7 @@ export function createStubWorld({ root, canvas, selectors = {} } = {}) {
     },
     applyEffect(effect, item, info) {
       const el = item?.el;
-      if (!el) return;
+      if (!el || effect === 'thread') return;
       if (info?.crawler) el.style.setProperty('--cw-color', info.crawler.traits.palette.accent);
       if (effect === 'nibble') {
         el.classList.add('cw-eaten');

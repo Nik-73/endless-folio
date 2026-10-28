@@ -111,7 +111,7 @@ function build() {
     el.innerHTML = `<h2></h2><div class="meta"></div><div class="field"><div class="text">${plateText(seed)}</div><canvas></canvas></div><div class="traits"></div>`;
     main.append(el);
     const field = el.querySelector('.field'), canvas = el.querySelector('canvas');
-    const world = createStubWorld({ root: field.querySelector('.text'), canvas });
+    const world = createStubWorld({ root: field.querySelector('.text'), canvas, paperColor: '#f4efe4' });
     const c = createCrawler({ seed, canvas, world, pointerTarget: field, debug, startAwake: false });
     const T = c.traits, P = T.palette;
     el.querySelector('h2').textContent = T.name.full;

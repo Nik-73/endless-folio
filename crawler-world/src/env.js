@@ -22,6 +22,10 @@ export function createEmitter() {
   };
 }
 
+// Extra hit radius (CSS px) around a creature for a tap, by pointer type. 28 px on
+// touch makes even a small creature a ~44 px+ target without drawing it bigger.
+export const TAP_PAD = { mouse: 10, pen: 14, touch: 28 };
+
 const MAX_DPR = 2; // Higher backing stores cost battery for little visible gain.
 
 export function createEnv({ canvas, win = window, startMuted = true } = {}) {
@@ -80,6 +84,7 @@ export function createEnv({ canvas, win = window, startMuted = true } = {}) {
   // during the scroll, so we listen to both and merge them.
   const pointer = { x: viewport.width / 2, y: viewport.height / 2, active: false, down: false, type: 'mouse', lastMove: 0 };
   let downAt = null;
+  let claimedTap = null;
 
   // Host UI marked [data-cw-ignore] (toolbars, buttons) never steers the creature.
   const ignored = (e) => e.target?.closest?.('[data-cw-ignore]');
@@ -100,12 +105,26 @@ export function createEnv({ canvas, win = window, startMuted = true } = {}) {
   listen(win, 'pointerup', (e) => {
     if (ignored(e) && !downAt) return;
     pointer.down = false;
-    update(e.clientX, e.clientY, e.pointerType || 'mouse', 'up');
-    if (downAt && e.timeStamp - downAt.t < 300 && Math.hypot(e.clientX - downAt.x, e.clientY - downAt.y) < 12) {
-      em.emit('tap', { x: e.clientX, y: e.clientY, pointerType: e.pointerType || 'mouse' });
+    const type = e.pointerType || 'mouse';
+    update(e.clientX, e.clientY, type, 'up');
+    // A finger is less precise than a cursor: slightly longer and looser taps count.
+    // A real scroll never reaches here: the browser fires pointercancel first.
+    const touchy = type !== 'mouse';
+    if (downAt && e.timeStamp - downAt.t < (touchy ? 400 : 300) && Math.hypot(e.clientX - downAt.x, e.clientY - downAt.y) < (touchy ? 16 : 12)) {
+      const tap = { x: e.clientX, y: e.clientY, pointerType: type, pad: TAP_PAD[type] ?? TAP_PAD.touch, claimed: false };
+      // A handler that "owns" the tap (e.g. it hit the creature) calls claim() so the
+      // click that follows does not also follow a link underneath. Scrolling is untouched.
+      tap.claim = () => { tap.claimed = true; claimedTap = { x: tap.x, y: tap.y, t: e.timeStamp }; };
+      em.emit('tap', tap);
     }
     downAt = null;
   });
+  // Swallow only the click that belongs to a claimed tap (same spot, within 600 ms).
+  listen(win, 'click', (e) => {
+    if (!claimedTap) return;
+    const c = claimedTap; claimedTap = null;
+    if (e.timeStamp - c.t < 600 && Math.hypot(e.clientX - c.x, e.clientY - c.y) < 24) { e.preventDefault(); e.stopPropagation(); }
+  }, { capture: true, passive: false });
   listen(win, 'pointercancel', () => { pointer.down = false; downAt = null; });
   listen(win, 'touchmove', (e) => {
     const t = e.touches[0];
@@ -157,6 +176,7 @@ export function createEnv({ canvas, win = window, startMuted = true } = {}) {
 
   return {
     ...em,
+    tapPad: TAP_PAD,
     viewport,
     pointer,
     audio,

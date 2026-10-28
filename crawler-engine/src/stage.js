@@ -51,7 +51,7 @@ export class Stage {
     this.speedScale = 1;
     this.width = 0; this.height = 0; this.dpr = 1;
     // Effective pointer the creatures read each frame (reused, never reallocated).
-    this.ptr = { x: 0, y: 0, active: false, down: false, type: 'mouse' };
+    this.ptr = { x: 0, y: 0, vx: 0, vy: 0, active: false, down: false, type: 'mouse' };
     this._raw = { x: 0, y: 0, active: false, down: false, type: 'mouse', lastMove: 0 };
     this._lastSeenMove = 0;
     this.stats = { fps: 60, frameMs: 0, updateMs: 0, drawMs: 0 };
@@ -106,7 +106,7 @@ export class Stage {
     if (this.host) {
       const W = this.world;
       this._raw = W.pointer; // live object owned by the host
-      offs.push(W.on('tap', (e) => this._tap(e.x, e.y)));
+      offs.push(W.on('tap', (e) => this._tap(e.x, e.y, e.pointerType, e)));
       offs.push(W.on('scroll', ({ dx, dy }) => {
         // Creatures live on the page, not the glass: move them with the text.
         for (const c of this.crawlers) c.translate(-dx, -dy);
@@ -152,7 +152,7 @@ export class Stage {
       raw.down = false;
       if (downAt && performance.now() - downAt.t < 350 && Math.hypot(e.clientX - downAt.x, e.clientY - downAt.y) < 12) {
         const [x, y] = local(e.clientX, e.clientY);
-        if (x >= 0 && y >= 0 && x <= this.width && y <= this.height) this._tap(x, y);
+        if (x >= 0 && y >= 0 && x <= this.width && y <= this.height) this._tap(x, y, e.pointerType);
       }
       downAt = null;
     });
@@ -174,27 +174,33 @@ export class Stage {
     if (this.running && !this.hidden) this._draw(); // a resize clears the canvas
   }
 
-  _tap(x, y) {
+  /** e (host taps): { pad, claim() }. A claimed tap cancels the click that follows, so poking a creature on a link doesn't follow the link. */
+  _tap(x, y, pointerType = 'mouse', e = null) {
     this._interacted = true;
     let hit = null;
-    for (const c of this.crawlers) if (c.placed && c.hitTest(x, y, 12)) { hit = c; break; }
-    if (hit) { hit.poke(x, y); return; }
+    const pad = e?.pad ?? this.world?.tapPad ?? (pointerType === 'mouse' ? 12 : 20); // a fingertip needs a bigger target
+    for (const c of this.crawlers) if (c.placed && c.hitTest(x, y, pad)) { hit = c; break; }
+    if (hit) { e?.claim?.(); hit.poke(x, y); return; } // only pokes claim; calls still follow links
     if (!this.tapToSteer) return;
-    // Tap elsewhere: the nearest creature wakes and walks over (skittish ones just wake).
+    // Tap elsewhere: the nearest creature is called over.
     let best = null, bd = Infinity;
     for (const c of this.crawlers) {
       if (!c.placed) continue;
       const d = Math.hypot(c.x - x, c.y - y);
       if (d < bd) { bd = d; best = c; }
     }
-    if (!best) return;
-    if (best.traits.temperament.name === 'skittish' && bd < 160) best.wake('tap');
-    else best.setTarget(x, y, { duration: 5 });
+    if (best) best.call(x, y);
   }
 
   // -------------------------------------------------------------- frame
   _syncPointer(now) {
     const raw = this._raw, p = this.ptr;
+    // pointer velocity (px/s), for creatures that hop back from a lunge
+    const pdt = Math.max(0.004, (now - (this._pt || now)) / 1000 || 0.016);
+    this._pt = now;
+    if (p.active && raw.active) {
+      p.vx += ((raw.x - p.x) / pdt - p.vx) * 0.5; p.vy += ((raw.y - p.y) / pdt - p.vy) * 0.5;
+    } else { p.vx = 0; p.vy = 0; }
     const fresh = raw.down || (raw.lastMove && (now - raw.lastMove) / 1000 < POINTER_FADE);
     p.x = raw.x; p.y = raw.y; p.down = !!raw.down; p.type = raw.type;
     p.active = !!raw.active && !!fresh;

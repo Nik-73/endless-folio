@@ -31,7 +31,8 @@ document.getElementById('seed-label').textContent = `specimen ${seed}`;
 
 const canvas = document.getElementById('crawler-canvas');
 const env = createEnv({ canvas, startMuted: true });
-const world = createWorld({ root: pageEl, env, predictor, rng: pageRng.fork('world') });
+const paper = getComputedStyle(document.documentElement).getPropertyValue('--paper').trim() || '#f2ecdf';
+const world = createWorld({ root: pageEl, env, predictor, rng: pageRng.fork('world'), paperColor: paper });
 
 // ---- endless page ----------------------------------------------------------
 const sentinel = document.getElementById('sentinel');

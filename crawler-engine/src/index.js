@@ -8,11 +8,12 @@ import { getStage } from './stage.js';
 import { adaptWorld, isFolioWorld } from './world-adapter.js';
 import { installAudioUnlock, adoptAudio, audio } from './audio.js';
 import { generateTraits, toAttributes, TRAITS_VERSION } from './traits.js';
+import { sizeFloorScale, presence } from './size.js';
 
-export { generateTraits, toAttributes, TRAITS_VERSION, audio };
+export { generateTraits, toAttributes, TRAITS_VERSION, audio, presence, sizeFloorScale };
 export { createStubWorld } from './stub-world.js';
 
-export const ENGINE_VERSION = '0.2.0';
+export const ENGINE_VERSION = '0.3.0';
 
 /**
  * Create a creature on a canvas. Several creatures may share one canvas.
@@ -22,16 +23,19 @@ export function createCrawler({
   seed, canvas, world = null,
   x, y, heading, scale = 1,
   startAwake = true, sound = true, debug = false,
-  pointerTarget = null, tapToSteer = true, bounds = null, insets = null,
+  pointerTarget = null, tapToSteer = true, bounds = null, insets = null, sizeFloor = true,
 } = {}) {
   if (seed === undefined || seed === null) throw new Error('createCrawler: seed is required');
   if (!canvas || !canvas.getContext) throw new Error('createCrawler: canvas is required');
 
+  const traits = generateTraits(seed);
+  // Word-sized at least: a render scale, never a trait change.
+  const renderScale = scale * (sizeFloor ? sizeFloorScale(traits, typeof sizeFloor === 'number' ? sizeFloor : undefined) : 1);
   const engineWorld = adaptWorld(world);
   const stage = getStage(canvas, { world, pointerTarget, tapToSteer });
   const crawler = new Crawler({
-    seed, world: engineWorld, stage, bounds, insets,
-    x, y, heading, scale, startAwake, sound, debug,
+    seed, traits, world: engineWorld, stage, bounds, insets,
+    x, y, heading, scale: renderScale, startAwake, sound, debug,
   });
   stage.add(crawler);
 
@@ -52,6 +56,8 @@ export function createCrawler({
     sleep: (reason) => crawler.sleep(reason),
     poke: (px, py) => crawler.poke(px, py),
     setTarget: (tx, ty, opts) => crawler.setTarget(tx, ty, opts),
+    /** Same as a tap on empty space: acknowledged at once, then it comes over. */
+    call: (tx, ty) => crawler.call(tx, ty),
     clearTarget: () => crawler.clearTarget(),
     place: (px, py, h) => crawler.place(px, py, h),
     /** Keep clear of host UI, in canvas CSS px: { top, right, bottom, left }. */
@@ -62,6 +68,8 @@ export function createCrawler({
     get state() { return crawler.state; },
     get mode() { return crawler.state === 'asleep' ? 'asleep' : crawler.mode; },
     get stats() { return stage.stats; },
+    /** Render scale actually used (size floor × `scale`). */
+    get scale() { return crawler.scale; },
   };
   return handle;
 }

@@ -26,14 +26,15 @@ class FolioAdapter {
   constructor(world, { restoreEaten = 45000 } = {}) {
     this.host = world;
     this.restoreEaten = restoreEaten;
-    this.memory = []; // recently read words, for 'connect' threads
     this.lastScatter = -1e9;
     this.lastFootWord = null;
     this.footT = 0;
   }
 
-  queryNear(x, y, radius) {
-    const items = this.host.queryNear(x, y, radius, { kinds: ['word', 'link', 'image'], limit: 24 });
+  get paperColor() { return this.host.paperColor || null; }
+
+  queryNear(x, y, radius, limit = 24) {
+    const items = this.host.queryNear(x, y, radius, { kinds: ['word', 'link', 'image'], limit });
     for (const it of items) it.type = KIND_TO_TYPE[it.kind] || it.kind;
     return items;
   }
@@ -58,9 +59,11 @@ class FolioAdapter {
   applyEffect(effect, item, info) {
     const H = this.host, c = info?.crawler, color = c?.traits.palette.accent;
     switch (effect) {
-      case 'read':
-        H.applyEffect('highlight', item, { color, duration: 2400 });
-        this._remember(item, color, c);
+      case 'read': // one word of a reading chain; the chain leaves a trail
+        H.applyEffect('highlight', item, { color, duration: 4200 });
+        break;
+      case 'thread': // first word of a reading chain to its last
+        if (info?.to) H.applyEffect('connect', [item, info.to], { color });
         break;
       case 'nibble': {
         const r = H.applyEffect('fade', item, { amount: 0.2 });
@@ -88,18 +91,6 @@ class FolioAdapter {
       default:
         H.applyEffect(effect, item, info); // let unknown verbs through untouched
     }
-  }
-
-  /** Every so often a read word gets tied back to one read earlier. */
-  _remember(item, color, c) {
-    if (item.kind !== 'word') return;
-    const m = this.memory;
-    if (m.length > 3 && (c ? c.rng.next() : Math.random()) < 0.3) {
-      const earlier = m[Math.floor((c ? c.rng.next() : Math.random()) * (m.length - 2))];
-      if (earlier.id !== item.id) this.host.applyEffect('connect', [earlier, item], { color });
-    }
-    m.push(item);
-    if (m.length > 10) m.shift();
   }
 
   /** Feet light up the words they land on (rate-limited). */

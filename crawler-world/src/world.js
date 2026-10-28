@@ -11,7 +11,24 @@ import { createThreadLayer } from './fx-layer.js';
 
 const KINDS = ['word', 'link', 'image', 'block'];
 
-export function createWorld({ root, env, predictor, rng, threadMount, threadZ = 40 }) {
+// First non-transparent background colour from el up to <html>, else white.
+export function resolvePaperColor(el) {
+  const win = el.ownerDocument.defaultView;
+  for (let n = el; n && n.nodeType === 1; n = n.parentElement) {
+    const c = win.getComputedStyle(n).backgroundColor;
+    const m = c && c.match(/rgba?\(([^)]+)\)/);
+    if (!m) continue;
+    const parts = m[1].split(/[ ,/]+/).filter(Boolean).map(Number);
+    if (parts.length < 4 || parts[3] > 0) return c;
+  }
+  return '#ffffff';
+}
+
+// attrPrefix namespaces the data-* attributes this world writes (data-cw-block,
+// data-cw-id by default), so two worlds can share one page without clobbering
+// each other (e.g. the extension's creature visiting the Folio).
+export function createWorld({ root, env, predictor, rng, threadMount, threadZ = 40, paperColor, attrPrefix = 'cw' }) {
+  const BLOCK_KEY = attrPrefix + 'Block', ID_KEY = attrPrefix + 'Id';
   const win = root.ownerDocument.defaultView;
   const blocks = new Map(); // el -> block
   const blockById = new Map();
@@ -41,7 +58,7 @@ export function createWorld({ root, env, predictor, rng, threadMount, threadZ = 
   function register(el) {
     if (blocks.has(el)) return blocks.get(el);
     const b = { id: 'b' + ++seq, el, items: [], dirty: true, box: null, heading: /^H[1-6]$/.test(el.tagName), scattered: false };
-    el.dataset.cwBlock = b.id;
+    el.dataset[BLOCK_KEY] = b.id;
     blocks.set(el, b);
     blockById.set(b.id, b);
     io.observe(el);
@@ -59,11 +76,11 @@ export function createWorld({ root, env, predictor, rng, threadMount, threadZ = 
   }
 
   function upsert(el, kind, b, extra) {
-    let id = el.dataset.cwId;
+    let id = el.dataset[ID_KEY];
     let it = id && items.get(id);
     if (!it) {
       id = kind[0] + ++seq;
-      el.dataset.cwId = id;
+      el.dataset[ID_KEY] = id;
       it = { id, kind, el, block: b, text: '', rects: [], box: null, ...extra };
       items.set(id, it);
     }
@@ -302,6 +319,10 @@ export function createWorld({ root, env, predictor, rng, threadMount, threadZ = 
 
   return {
     version: 1,
+    /** Colour of the paper under the text, for halos/shadows that lift the creature off the page. */
+    get paperColor() { return typeof paperColor === 'function' ? paperColor() : paperColor || (paperColor = resolvePaperColor(root)); },
+    /** Extra tap radius around a creature, by pointer type (mouse/pen/touch). Also on each tap event as `pad`. */
+    tapPad: env.tapPad,
     effects: ['highlight', 'connect', 'scatter', 'gather', 'fade', 'pulse', 'clear'],
     kinds: KINDS,
     viewport: env.viewport,

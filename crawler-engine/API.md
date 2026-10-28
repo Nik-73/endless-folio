@@ -1,6 +1,6 @@
 # Crawler engine — API
 
-Plain ES modules, no dependencies, Canvas 2D. Engine version `0.2.0`, traits version `1`.
+Plain ES modules, no dependencies, Canvas 2D. Engine version `0.3.0`, traits version `1`.
 
 ```
 crawler-engine/
@@ -35,7 +35,8 @@ The Folio host (`crawler-world/src/main.js`) already finds the engine at `../cra
 | `canvas` | **required** | a `<canvas>`. Several creatures may share one canvas (they share one stage). |
 | `world` | `null` | the page the creature lives on (see below). Without it the creature just roams the canvas. |
 | `x`, `y`, `heading` | random from seed | start position (canvas CSS px) and heading (radians). |
-| `scale` | `1` | size multiplier. Speed scales with √scale. |
+| `scale` | `1` | size multiplier. Speed scales with √scale. Multiplied by the size floor below. |
+| `sizeFloor` | `true` | render small creatures bigger so presence (max of leg span and 0.6 × body length) is at least 52 px, up to 1.7×. A number sets a different floor; `false` turns it off. **Traits are untouched**: it is a render scale, so every seed keeps its body, palette and temperament. `handle.scale` reports the scale used. |
 | `startAwake` | `true` | start awake (and stay up at least 20 s). Pass `false` to start curled up until the first interaction (the demo does). |
 | `sound` | `true` | `false` disables the voice for this creature. |
 | `debug` | `false` | draws sense radius, foot targets, engaged item and mode. |
@@ -52,7 +53,8 @@ Handle:
 | `destroy()` | remove the creature; the stage is torn down (and canvas cleared) when its last creature goes. |
 | `wake(reason?)`, `sleep(reason?)` | |
 | `poke(x, y)` | as if tapped at that point. |
-| `setTarget(x, y, {duration=6})`, `clearTarget()` | walk somewhere (wakes it). |
+| `call(x, y)` | same as a tap on empty space: instant acknowledgement, then a fast walk over (skittish: see Behaviour). |
+| `setTarget(x, y, {duration=6})`, `clearTarget()` | walk somewhere quietly (wakes it). |
 | `place(x, y, heading?)` | teleport and re-plant the legs. |
 | `setInsets({top,right,bottom,left})` | change UI insets at runtime. |
 | `on(event, fn) -> off` | events below. |
@@ -60,7 +62,7 @@ Handle:
 | `seed`, `traits`, `attributes` | normalised seed, full trait object, OpenSea-style attribute array. |
 | `position` | `{x, y, heading}` of the head, canvas CSS px. |
 | `state` | `'asleep' \| 'awake'`. |
-| `mode` | `'asleep' \| 'roam' \| 'watch' \| 'follow' \| 'flee' \| 'engage' \| 'return'`. |
+| `mode` | `'asleep' \| 'roam' \| 'watch' \| 'follow' \| 'flee' \| 'engage' \| 'return' \| 'called' \| 'wary'`. |
 | `stats` | `{fps, frameMs, updateMs, drawMs}` for the stage, refreshed each second. |
 | `crawler`, `stage` | internals, for debugging. |
 
@@ -68,14 +70,17 @@ Events (payload always includes `crawler`):
 
 | event | payload |
 |---|---|
-| `wake` | `{reason}` — `'first-interaction' 'pointer' 'poke' 'tap' 'target' 'return' 'api' …` |
+| `wake` | `{reason}` — `'first-interaction' 'pointer' 'poke' 'call' 'target' 'return' 'api' …` |
+| `call` | `{x, y, partial}` — a tap called it (`partial`: skittish, first tap) |
+| `chain` | `{words, effect}` — finished reading (or eating) a run of words |
+| `reenter` | `{edge}` — came back on-screen after a scroll |
 | `sleep` | `{reason}` — `'idle' 'perch' 'api'` |
 | `poke` | `{x, y}` |
 | `engage` | `{target, effect}` — it has picked an item to go to |
 | `effect` | `{type, target}` — fired whenever it calls `world.applyEffect` |
 | `footstep` | `{leg, x, y, intensity}` — a foot landed |
 
-Other exports: `generateTraits(seed)`, `toAttributes(traits)`, `TRAITS_VERSION`, `ENGINE_VERSION`, `createStubWorld({root, canvas})`, and `audio` (`audio.setMuted(bool)`, `audio.setVolume(0..1)`, `audio.running`, `audio.onReady(fn)`).
+Other exports: `generateTraits(seed)`, `presence(traits)`, `sizeFloorScale(traits, min?)`, `toAttributes(traits)`, `TRAITS_VERSION`, `ENGINE_VERSION`, `createStubWorld({root, canvas})`, and `audio` (`audio.setMuted(bool)`, `audio.setVolume(0..1)`, `audio.running`, `audio.onReady(fn)`).
 
 ## Coordinates, sizing, input
 
@@ -89,9 +94,13 @@ Other exports: `generateTraits(seed)`, `toAttributes(traits)`, `TRAITS_VERSION`,
 ## Behaviour
 
 - **Awake on arrival, sleep later.** By default creatures start awake and won't doze for the first 20 s (8 s after any later wake). After that, `temperament.sleepAfter` seconds with nothing happening sends them to sleep (legs folded, slow breathing, little squares drifting up). The **first** pointer move, press or tap anywhere on the page wakes every sleeper. After that, a pointer moving within roughly `senseRadius × 1.5` wakes one, as do a press, a tap or `wake()`. A sleeper that ends up off-screen wakes and walks back.
-- **Staying in view.** The creature roams `world.bounds()` (the visible part of the column, clipped to `visualViewport` so a phone's URL bar doesn't hide it), minus `insets`, with a margin so its legs stay visible. Scrolling carries it with the text. If that pushes it off-screen it switches to mode `return` and walks back in; if it's pushed far away it re-enters from just past the nearest edge. It ignores page items that aren't in view and abandons any it was visiting once they scroll away.
-- **Steering.** Pointer nearby: bold creatures follow, timid ones flee (towards images, for cover), the rest keep watch. **Pressing/holding** adds +0.5 boldness, so most creatures come to a held finger or mouse. **Tap on a creature** pokes it (it startles away; very bold ones turn to face you). **Tap empty space** sends the nearest creature there (skittish ones only wake). The pointer stops attracting 2.5 s after the last move, so a lifted finger is forgotten.
-- **Page sensing.** About 3 times a second an idle creature calls `world.queryNear(x, y, senseRadius)`. It picks an item weighted by its temperament (`prefs`), walks over and acts on it (`effects`). It reads along words, perches on images and tugs links. Each item then has a 12–25 s cooldown.
+- **Staying in view.** The creature roams `world.bounds()` (the visible part of the column, clipped to `visualViewport` so a phone's URL bar doesn't hide it), minus `insets`, with a margin so its legs stay visible. Scrolling carries it with the text. Once scrolling settles (0.25 s) a creature that ends up off-screen re-enters at the nearest edge, already moving, and sprints in (spiders entering from the top drop in on a thread). Measured: back in view 0.25–0.5 s after scrolling stops. A creature that merely wanders near the edge walks back in (mode `return`). It ignores page items that aren't in view and abandons any it was visiting once they scroll away.
+- **Attention.** The head and antennae turn toward whatever it attends to (pointer, a call, the word it's reading); antenna tips reach 60% of the way toward it. Crab-walking scuttlers turn their face, not their path.
+- **Pointer.** Bold creatures (boldness > 0.55) follow and circle under it. Middle temperaments (0.35–0.55) **watch**: they approach to a keep ring (70 + ½ body length), orbit it sideways (reversing every 2–4 s) and hop back from a lunge faster than 600 px/s. Timid ones freeze and stare, and flee (toward images, sliding along walls when cornered) once it comes within their fear radius. **Pressing/holding** adds +0.5 boldness, so most come to a held finger or mouse. The pointer stops attracting 2.5 s after the last move.
+- **Tap on a creature** pokes it (it startles away; very bold ones turn to face you). The hit pad is 12 px for a mouse and 20 px for touch.
+- **Tap empty space** calls the nearest creature (mode `called`). It acknowledges on the same frame: the head snaps toward the tap, a wake chirp sounds, and four ink squares contract onto the spot over 0.4 s. It then runs at ≥ 1.35× its top speed (at least 120 px/s) for the first 60% of the way and eases in. A 150 px call takes about 1.1–1.4 s. **Skittish** creatures come 60% of the way, then freeze facing the tap for 1.5 s (mode `wary`); a second tap within the next few seconds brings them all the way.
+- **Reading.** Every 2.5–5.5 s of roaming (sooner for curious creatures) it picks a line of text and reads along it: 3 + round(curiosity × 4) words on the same line, stopping at `. ; : ! ?`. It walks along the line at 34–70 px/s and each word is `read` as its head passes. Gluttons `nibble` the phrase instead. When the chain ends it ties the first word to the last with a `thread`; restless and bold ones may `jostle` the last word. If nothing readable is close it looks up to 520 px away and walks over.
+- **Other page items.** About 3 times a second an idle creature calls `world.queryNear(x, y, senseRadius)` and may walk to an image or link weighted by temperament (`prefs`) to perch, hide, inspect or tug it. Those visits end early when it's time to read again. Each item then has a 12–30 s cooldown.
 - **Locomotion.** Legs step on their own when their foot lags behind its rest spot. Neighbours that are mid-step hold a leg back; neighbours that just landed nudge it forward (a simplified Cruse/Walknet scheme). Tripod, tetrapod, wave and other gaits emerge from those local rules. Each leg is a two-bone IK chain with the knee bent outward. The spine follows the head with a per-joint bend limit.
 - **Sound.** Each footstep is a short note: the leg index picks a degree of the creature's seeded scale, and speed sets the loudness. Some creatures also hum, with pitch and filter rising with speed. Voices are panned by screen x. There are chirps on wake, poke and sleep. Overall output is capped at 6 notes per 40 ms. In host mode the engine routes through the host's `world.audio.output` and respects `world.audio.muted`. Standalone, it unlocks its own context on the first gesture (works on iOS). When the page is hidden, audio is suspended.
 
@@ -100,7 +109,8 @@ Other exports: `generateTraits(seed)`, `toAttributes(traits)`, `TRAITS_VERSION`,
 The engine needs only two methods; everything else is optional.
 
 ```ts
-queryNear(x, y, radius): Item[]           // nearest first
+queryNear(x, y, radius, limit?): Item[]   // nearest first; the engine may ask for up to 160 items
+paperColor?: string                       // page background, for the paper halo (default #f2ecdf)
 applyEffect(effect, item, info): void     // info = { crawler, x, y, intensity }
 bounds?(): {x, y, w, h}                   // where creatures may roam (default: whole canvas)
 
@@ -111,13 +121,14 @@ The `effect` names are the engine's behaviour verbs:
 
 | verb | who does it | meaning |
 |---|---|---|
-| `read` | curious, skittish, drowsy on text | walks along a word |
-| `nibble` | gluttons | eats a word |
+| `read` | everyone except gluttons | one word of a reading chain, as the head passes it |
+| `nibble` | gluttons | eats one word of a chain |
+| `thread` | at the end of a chain | `info.to` is the chain's last word; tie it to the first |
 | `tug` | most, on links | pulls at a link |
 | `inspect` | on images | circles and looks |
 | `hide` | skittish on images | shelters on an image |
 | `perch` | drowsy, bold on images | sits on it (drowsy ones fall asleep there) |
-| `jostle` | restless, bold on text | shoves the text around |
+| `jostle` | restless, bold, after a chain | shoves the text around |
 
 `createStubWorld` implements this contract for any DOM container. It indexes `.w` (words), `a` and `.img, img`, and turns effects into `.cw-fx-<verb>` classes plus `.cw-eaten`.
 
@@ -127,7 +138,8 @@ When `world.kinds` includes `'word'`, `world-adapter.js` wraps it. Item kinds ma
 
 | verb | Folio effect |
 |---|---|
-| read | `highlight` (creature accent colour, 2.4 s). About 30% of reads also `connect` the word to one read earlier. |
+| read | `highlight` (creature accent colour, 4.2 s), so a chain leaves a visible trail along the line |
+| thread | `connect` from the chain's first word to its last |
 | nibble | `fade` to 0.2, undone after 45 s |
 | tug | `pulse` + short `highlight` |
 | inspect / hide / perch | `pulse` + `world.touch(item, 0.5)` |
@@ -168,6 +180,8 @@ Distribution over 2000 seeds: 6 legs 37%, 8 legs 20%, 4 legs 6%, 10–30 legs th
 `toAttributes(traits)` returns the 12 metadata attributes for the mint (body plan, legs, segments, gait, temperament, palette, shell, leg style, antennae, eyes, tail, voice).
 
 ## Visual language
+
+Legs, spine and body are drawn over a thin halo in `world.paperColor` (line width + 2.6 px, body radius + 1.6 px, 90% alpha), so ink legs don't merge with ink letters. This replaces the CSS drop-shadow idea, which re-rasterises a full-screen canvas every frame.
 
 The look is deliberately simple: hollow or filled discs, blocks and lozenges for the body, and hairline legs with square or dot joints. The accent fill is printed slightly off-register from the ink outline, like a two-colour riso print. Fading footprints mark where it has walked; lifted feet show as hollow tint squares. All of this is my own design and not taken from the reference work.
 
