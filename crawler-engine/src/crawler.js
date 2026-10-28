@@ -3,10 +3,10 @@
 //
 // Coordinates are canvas CSS pixels, time is seconds. Nothing here allocates
 // per frame on the hot path (legs, segments and prints are reused).
-import { generateTraits } from './traits.js?v=20261028175358';
-import { createRng } from './rng.js?v=20261028175358';
-import { Voice } from './audio.js?v=20261028175358';
-import { drawFiligree } from './filigree.js?v=20261028175358';
+import { generateTraits } from './traits.js?v=20261028215825';
+import { createRng } from './rng.js?v=20261028215825';
+import { Voice } from './audio.js?v=20261028215825';
+import { drawFiligree } from './filigree.js?v=20261028215825';
 
 const TAU = Math.PI * 2, DEG = Math.PI / 180;
 const clamp = (x, lo, hi) => (x < lo ? lo : x > hi ? hi : x);

@@ -6,12 +6,13 @@
 // restores the page text. The page plumbing lives in ../src/host-page.js,
 // shared with the Chrome extension.
 
-import { parseSeed } from '../src/prng.js?v=20261028175358';
-import { attachToPage, TOP_Z } from '../src/host-page.js?v=20261028175358';
-import { createCrawler as createStubCrawler } from '../src/stub-crawler.js?v=20261028175358';
+import { parseSeed } from '../src/prng.js?v=20261028215825';
+import { attachToPage, TOP_Z } from '../src/host-page.js?v=20261028215825';
+import { addSheet } from '../src/sheet.js?v=20261028215825';
+import { createCrawler as createStubCrawler } from '../src/stub-crawler.js?v=20261028215825';
 
 const KEY = '__folioBookmarklet';
-const ENGINE_CANDIDATES = ['../../crawler-engine/src/index.js?v=20261028175358', '../../crawler-engine/index.js?v=20261028175358'];
+const ENGINE_CANDIDATES = ['../../crawler-engine/src/index.js?v=20261028215825', '../../crawler-engine/index.js?v=20261028215825'];
 
 if (window[KEY]) {
   window[KEY].destroy();
@@ -33,12 +34,9 @@ async function boot() {
   const name = !raw || /^\d+$/.test(raw) ? `Specimen ${seed}` : raw.charAt(0).toUpperCase() + raw.slice(1);
   const host = await attachToPage({ seed, createCrawler, canvasClass: 'cw-bm-canvas', rngLabel: 'bookmarklet:' + location.host, name, seedLabel: raw || seed });
 
-  const style = document.createElement('style');
-  style.className = 'cw-bm-ui';
-  style.textContent = `.cw-bm-close { position: fixed; right: 12px; bottom: max(12px, env(safe-area-inset-bottom)); z-index: ${TOP_Z + 1};
+  const removeSheet = addSheet(document, `.cw-bm-close { position: fixed; right: 12px; bottom: max(12px, env(safe-area-inset-bottom)); z-index: ${TOP_Z + 1};
       font: 12px/1 ui-monospace, Menlo, monospace; letter-spacing: .06em; padding: 10px 14px; border-radius: 999px;
-      border: 1px solid #b9ab8f; background: #f6f0e3; color: #2b241c; cursor: pointer; }`;
-  document.head.append(style);
+      border: 1px solid #b9ab8f; background: #f6f0e3; color: #2b241c; cursor: pointer; }`, 'cw-bm-ui');
   const close = document.createElement('button');
   close.dataset.cwIgnore = '';
   close.type = 'button';
@@ -48,6 +46,7 @@ async function boot() {
 
   function destroy() {
     host.destroy();
+    removeSheet();
     removeEventListener('keydown', onKey, true);
     delete window[KEY];
   }

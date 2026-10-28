@@ -113,6 +113,7 @@ class FolioAdapter {
 
   /** A planted foot presses the word under it (no colour, just weight). */
   footstep(x, y, crawler, holdId) {
+    if (crawler?.passive) return; // helpers are too light to press the page (and three pressers cost frames)
     const now = performance.now();
     if (now - this.footT < 60) return;
     this.footT = now;

@@ -17,7 +17,9 @@
 //
 // Shared by the Folio (src/main.js) and other people's pages (host-page.js).
 
-import { createPageLayer, localStore, pageKey } from './page-layer.js?v=20261028175358';
+import { createPageLayer, localStore, pageKey } from './page-layer.js?v=20261028215825';
+import { digestPage, sentenceSpans } from './digest.js?v=20261028215825';
+import { addSheet } from './sheet.js?v=20261028215825';
 
 const NS = 'http://www.w3.org/2000/svg';
 const CDN_LOADER = 'https://cdn.jsdelivr.net/gh/Nik-73/endless-folio@main/crawler-world/bookmarklet/loader.js';
@@ -75,6 +77,12 @@ html.cw-original .cw-knocked { transform: none !important; opacity: 1 !important
 .cw-ledger li .from { opacity: .5; font-size: 10px; margin-left: 4px; }
 .cw-ledger footer { flex-wrap: wrap; }
 .cw-ledger footer button[aria-pressed="true"] { background: var(--cw-ink); color: var(--cw-paper); }
+.cw-key { background: linear-gradient(transparent 62%, color-mix(in srgb, var(--cw-hot) 28%, transparent) 62%); }
+.cw-work .scan { stroke: var(--cw-hot); stroke-width: 1.5; opacity: .55; }
+.cw-ledger .s-digest li { cursor: pointer; font-family: Georgia, serif; font-size: 13px; padding: 3px 0; }
+.cw-ledger .s-digest li:hover { color: var(--cw-hot); }
+.cw-ledger .s-digest .meta { font-size: 10px; opacity: .55; margin-bottom: 2px; }
+html.cw-original .cw-key { background: none !important; }
 @keyframes cw-land { 0% { background: color-mix(in srgb, var(--cw-hot) 30%, transparent); } 100% { background: transparent; } }
 @media (prefers-reduced-motion: reduce) { .cw-knocked { transition: none; } .cw-ledger .dot { animation: none; } }
 `;
@@ -95,18 +103,13 @@ const clean = (s) => String(s || '').replace(/\s+/g, ' ').trim();
  * @param {string} [o.uiClass] class put on everything we add (host pages tear down by it)
  * @param {function} [o.avoid] () => [DOMRect] host UI the ledger and creature keep clear of
  */
-export function createWorker({ crawler, world, predictor = null, name = 'Crawler', z = 45, colors = {}, uiClass = 'cw-work-ui', doc = document, avoid = () => [], store = localStore(), seed = null, loaderUrl = CDN_LOADER }) {
+export function createWorker({ crawler, world, predictor = null, name = 'Crawler', z = 45, colors = {}, uiClass = 'cw-work-ui', doc = document, avoid = () => [], store = localStore(), seed = null, loaderUrl = CDN_LOADER, spawn = null, startClosed = false }) {
   const win = doc.defaultView;
   const added = [];
   const ink = colors.ink || '#1d1915', paper = colors.paper || '#f6f0e3', hot = colors.hot || '#c2410c';
 
-  const style = doc.createElement('style');
-  style.className = uiClass;
-  style.dataset.cwUi = '';
   // Page marks (torn links, bitten words) live in the host page, so the colours go on :root too.
-  style.textContent = `:root { --cw-ink: ${ink}; --cw-paper: ${paper}; --cw-hot: ${hot}; }\n` + CSS;
-  doc.head.append(style);
-  added.push(style);
+  const removeSheet = addSheet(doc, `:root { --cw-ink: ${ink}; --cw-paper: ${paper}; --cw-hot: ${hot}; }\n` + CSS, uiClass);
 
   // ---- overlay: sight-line, bracket, silk -----------------------------------
   const layer = doc.createElement('div');
@@ -119,7 +122,8 @@ export function createWorker({ crawler, world, predictor = null, name = 'Crawler
   const sight = doc.createElementNS(NS, 'path'); sight.setAttribute('class', 'sight');
   const bracket = doc.createElementNS(NS, 'path'); bracket.setAttribute('class', 'bracket');
   const silk = doc.createElementNS(NS, 'path'); silk.setAttribute('class', 'silk');
-  svg.append(sight, bracket, silk);
+  const scanLine = doc.createElementNS(NS, 'path'); scanLine.setAttribute('class', 'scan');
+  svg.append(sight, bracket, silk, scanLine);
   layer.append(svg);
   doc.body.append(layer);
   added.push(layer);
@@ -142,11 +146,12 @@ export function createWorker({ crawler, world, predictor = null, name = 'Crawler
     <header role="button" tabindex="0" aria-expanded="true"><b></b><span class="n">0</span></header>
     <div class="now"><span class="dot"></span><span><i>now</i> <em class="what">looking around</em></span></div>
     <div class="body">
+      <section class="s-digest"><h4>What this page is about</h4><div class="meta"></div><ol></ol><div class="empty">reading it…</div></section>
       <section class="s-links"><h4>Links it tore out</h4><ol></ol><div class="empty">none yet</div></section>
       <section class="s-quotes"><h4>Sentences you sent it for</h4><ol></ol><div class="empty">tap any word on the page</div></section>
       <section class="s-lines"><h4>What it wrote from what it ate</h4><ol></ol><div class="empty">nothing yet</div></section>
     </div>
-    <footer><button type="button" data-do="original" aria-pressed="false" title="Peek at the page as it was before">Original</button><button type="button" data-do="keep" title="Save this mutated page as its own file">Keep a copy</button><button type="button" data-do="copy">Copy ledger</button><button type="button" data-do="mend" title="Undo everything it did to this page">Mend page</button><button type="button" data-do="pause">Pause</button></footer>`;
+    <footer><button type="button" data-do="original" aria-pressed="false" title="Peek at the page as it was before">Original</button><button type="button" data-do="keep" title="Save this mutated page as its own file">Keep a copy</button><button type="button" data-do="read" title="Read the whole page again and mark what matters">Read page</button><button type="button" data-do="copy">Copy ledger</button><button type="button" data-do="mend" title="Undo everything it did to this page">Mend page</button><button type="button" data-do="pause">Pause</button></footer>`;
   ledger.querySelector('header b').textContent = `${name}'s ledger`;
   doc.body.append(ledger);
   added.push(ledger);
@@ -167,6 +172,7 @@ export function createWorker({ crawler, world, predictor = null, name = 'Crawler
     if (b.dataset.do === 'mend') { mendAll(); status('page mended'); }
     if (b.dataset.do === 'original') { const on = doc.documentElement.classList.toggle('cw-original'); b.setAttribute('aria-pressed', String(on)); status(on ? 'showing the original page' : 'back in its version of the page'); }
     if (b.dataset.do === 'keep') keepCopy(b);
+    if (b.dataset.do === 'read') { cancel(); pauseUntil = 0; queuedSurvey = true; }
     if (b.dataset.do === 'pause') { paused = !paused; b.textContent = paused ? 'Resume' : 'Pause'; if (paused) { cancel(); status('paused'); } else status('looking around'); }
   });
 
@@ -186,8 +192,19 @@ export function createWorker({ crawler, world, predictor = null, name = 'Crawler
       Object.assign(ledger.style, { left: '', right: '10px', top: 'max(10px, env(safe-area-inset-top))', bottom: '', width: ledger.classList.contains('is-closed') ? 'auto' : 'min(340px, calc(100vw - 20px))' });
     }
   }
+  if (startClosed) { ledger.classList.add('is-closed'); head.setAttribute('aria-expanded', 'false'); }
   place();
   win.addEventListener('resize', place);
+  // Open for a moment to show something new, then fold away unless you touch it.
+  let flashT = 0, touched = false;
+  ledger.addEventListener('pointerdown', () => { touched = true; clearTimeout(flashT); });
+  function flash(ms = 6000) {
+    if (!ledger.classList.contains('is-closed')) return;
+    toggle();
+    touched = false;
+    clearTimeout(flashT);
+    flashT = setTimeout(() => { if (!touched && !ledger.classList.contains('is-closed')) toggle(); }, ms);
+  }
 
   function status(text) { whatEl.textContent = text; }
   function bump() { total++; counter.textContent = String(total); }
@@ -236,6 +253,7 @@ export function createWorker({ crawler, world, predictor = null, name = 'Crawler
 
   function copyLedger(btn) {
     const L = [`${name}'s ledger — ${doc.title}`, location.href, ''];
+    if (digest?.key.length) { L.push('What this page is about:'); for (const k of digest.key) L.push(`- ${k.text}`); L.push(''); }
     if (entries.links.length) { L.push('Links:'); for (const e of entries.links) L.push(`- ${e.text} — ${e.href}`); L.push(''); }
     if (entries.quotes.length) { L.push('Quotes:'); for (const q of entries.quotes) L.push(`- “${q.text}”${q.from ? ' (' + q.from + ')' : ''}`); L.push(''); }
     if (entries.lines.length) { L.push('Written:'); for (const l of entries.lines) L.push(`- ${l.words.join(' · ')} → ${l.text}`); }
@@ -253,7 +271,9 @@ export function createWorker({ crawler, world, predictor = null, name = 'Crawler
   function markEl(el, cls, record = true) {
     el.classList.add(cls); marks.add([el, cls]);
     if (!record) return;
-    if (cls === 'cw-torn') pageLayer.recordTear(el); else pageLayer.recordBite(el);
+    if (cls === 'cw-torn') pageLayer.recordTear(el);
+    else if (cls === 'cw-key') pageLayer.recordWord('key', el);
+    else pageLayer.recordBite(el);
   }
   function knock(w, t, o, record = true) {
     w.classList.add('cw-knocked');
@@ -268,13 +288,14 @@ export function createWorker({ crawler, world, predictor = null, name = 'Crawler
     unknock([...knocked]);
     doc.documentElement.classList.remove('cw-original');
   }
-  function mendAll() { unmark(); pageLayer.clear(); ledger.querySelector('[data-do="original"]')?.setAttribute('aria-pressed', 'false'); }
+  function mendAll() { cancel(); pauseUntil = performance.now() + 4000; unmark(); pageLayer.clear(); ledger.querySelector('[data-do="original"]')?.setAttribute('aria-pressed', 'false'); }
   const pageLayer = createPageLayer({
     store, world, doc,
     onApply(el, op) {
       if (op.k === 'tear') markEl(el, 'cw-torn', false);
       else if (op.k === 'bite') markEl(el, 'cw-bitten', false);
       else if (op.k === 'knock') knock(el, op.t, op.o, false);
+      else if (op.k === 'key') markEl(el, 'cw-key', false);
     },
   });
   pageLayer.ready.then((n) => { if (n && !destroyed) status(`back where it left off: ${n} marks on this page`); });
@@ -386,6 +407,15 @@ export function createWorker({ crawler, world, predictor = null, name = 'Crawler
     return true;
   }
   const arrived = () => crawler.arrived;
+  // Close enough to bite: the jaws touch the element's box. A fast walker can
+  // circle a small word for seconds without settling on its exact centre.
+  function reached(el) {
+    if (crawler.arrived) return true;
+    if (!el?.isConnected) return true;
+    const r = el.getBoundingClientRect(), m = crawler.mouth;
+    const dx = Math.max(r.left - m.x, 0, m.x - r.right), dy = Math.max(r.top - m.y, 0, m.y - r.bottom);
+    return Math.hypot(dx, dy) < 6 + (crawler.length || 60) * 0.05;
+  }
   function cancel() { token++; dropCarried(); clearAim(); plough = null; follow = null; }
 
   // ---- what is on screen ------------------------------------------------------------
@@ -416,7 +446,7 @@ export function createWorker({ crawler, world, predictor = null, name = 'Crawler
     holdHere(centre(link.el));
     await wait(320, tok);
     goToEl(link.el);
-    await until(arrived, 9000, tok);
+    await until(() => reached(link.el), 9000, tok);
     status(`tearing out “${clip(text, 28)}”`);
     clearAim();
     crawler.crawler?.voice?.chirp('poke');
@@ -454,7 +484,7 @@ export function createWorker({ crawler, world, predictor = null, name = 'Crawler
       holdHere(centre(w.el));
       await wait(260, tok);
       goToEl(w.el);
-      await until(arrived, 8000, tok);
+      await until(() => reached(w.el), 8000, tok);
       clearAim();
       crawler.crawler?.voice?.chirp('poke');
       world.touch?.(w.id, 2);
@@ -497,10 +527,12 @@ export function createWorker({ crawler, world, predictor = null, name = 'Crawler
   function ploughStep() {
     const m = crawler.mouth, hd = crawler.position.heading;
     const R = Math.max(20, (crawler.length || 60) * 0.28);
-    for (const w of plough.words) {
+    // Positions were measured once when the plough started (document space), so a
+    // frame only reads numbers and writes transforms: no layout thrash on phones.
+    const sx = win.scrollX, sy = win.scrollY;
+    for (const { w, x, y } of plough.at) {
       if (knocked.has(w)) continue;
-      const r = w.getBoundingClientRect();
-      const cx = r.left + r.width / 2, cy = r.top + r.height / 2;
+      const cx = x - sx, cy = y - sy;
       const d = Math.hypot(cx - m.x, cy - m.y);
       if (d > R) continue;
       // shove sideways off the path, a little forward
@@ -537,7 +569,7 @@ export function createWorker({ crawler, world, predictor = null, name = 'Crawler
     await until(arrived, 8000, tok);
     clearAim();
     crawler.crawler?.voice?.chirp('wake');
-    plough = { words: els, hit: [] };
+    plough = { words: els, hit: [], at: els.map((w) => { const r = w.getBoundingClientRect(); return { w, x: r.left + r.width / 2 + win.scrollX, y: r.top + r.height / 2 + win.scrollY }; }) };
     // zig-zag down through the paragraph
     const rows = Math.max(1, Math.min(2, Math.round((y1 - y0) / 70)));
     for (let i = 1; i <= rows; i++) {
@@ -554,13 +586,91 @@ export function createWorker({ crawler, world, predictor = null, name = 'Crawler
     return true;
   }
 
+  // Survey: read the whole page, pick the sentences that carry it, then go and
+  // mark the ones on screen, with a brood of small helpers sharing the queue.
+  let digest = null;
+  function renderDigest() {
+    const sec = $('.s-digest');
+    sec.querySelector('.empty')?.remove();
+    sec.querySelector('.meta').textContent = `${digest.sentences} sentences, ~${digest.words} words read`;
+    const ol = sec.querySelector('ol');
+    ol.replaceChildren();
+    for (const k of digest.key) {
+      const li = doc.createElement('li');
+      li.textContent = clip(k.text, 220);
+      li.title = 'Show me';
+      li.addEventListener('click', () => api.point(k.el, { label: 'showing you where it says that', ms: 3500 }));
+      ol.append(li);
+    }
+  }
+  async function scanSweep(tok) {
+    const B = world.bounds(), t0 = performance.now(), ms = 1100;
+    try {
+      while (performance.now() - t0 < ms) {
+        const k = (performance.now() - t0) / ms, y = B.y + B.h * k;
+        scanLine.setAttribute('d', `M${B.x} ${y.toFixed(1)}H${B.x + B.w}`);
+        await wait(16, tok);
+      }
+    } finally { scanLine.setAttribute('d', ''); }
+  }
+  function visibleBlock(el) {
+    const r = el.getBoundingClientRect(), B = world.bounds();
+    return r.top > B.y + 20 && r.top < B.y + B.h - 60 && r.width > 0;
+  }
+  async function markKey(k, tok) {
+    const spans = k.el.querySelector('.w') ? sentenceSpans(k.el, k.text) : [];
+    for (const w of spans.slice(0, 60)) { check(tok); markEl(w, 'cw-key'); await sleep(12); }
+    return spans.length;
+  }
+  async function survey(tok) {
+    status('reading the whole page');
+    crawler.crawler?.voice?.chirp('wake');
+    await scanSweep(tok);
+    digest = digestPage(doc);
+    if (!digest.key.length) { status('nothing to read here'); return false; }
+    renderDigest();
+    const queue = digest.key.filter((k) => visibleBlock(k.el));
+    status(`read ${digest.sentences} sentences; marking ${queue.length} that matter`);
+    // brood: one helper per two sentences on screen, at most two
+    const helpers = [];
+    const nHelp = spawn ? Math.min(win.innerWidth <= 600 ? 1 : 2, Math.floor(queue.length / 2)) : 0;
+    const p0 = crawler.position;
+    for (let i = 0; i < nHelp; i++) {
+      try { const h = await spawn(i); if (h) { if (h.crawler) h.crawler.passive = true; h.place?.(p0.x + (i ? 16 : -16), p0.y + 10, p0.heading + (i ? 0.8 : -0.8)); helpers.push(h); } } catch { /* no brood here */ }
+    }
+    if (helpers.length) status(`sent ${helpers.length} helper${helpers.length > 1 ? 's' : ''} to read with it`);
+    const take = () => queue.shift();
+    const worker = async (body, isMain) => {
+      for (let k = take(); k; k = take()) {
+        check(tok); // a tap or a call cancels the reading before it moves again
+        const c = centre(k.el.querySelector('.w') || k.el);
+        if (isMain) { aimAt(k.el); goToPoint(c.x, c.y, { speed: 1.8, look: c }); }
+        else body.setTarget(c.x, c.y, { duration: 20, hold: true, free: true, speed: Math.max(1.6, 300 / (body.crawler?.maxSpeed || 150)), look: c });
+        const t0 = performance.now();
+        while (!(isMain ? crawler.arrived : body.arrived) && performance.now() - t0 < 7000) await wait(60, tok);
+        if (isMain) clearAim();
+        await markKey(k, tok);
+      }
+    };
+    try {
+      await Promise.all([worker(crawler, true), ...helpers.map((h) => worker(h, false))]);
+      // helpers come home and fold back in
+      const home = crawler.position;
+      helpers.forEach((h) => h.setTarget(home.x, home.y, { duration: 6, hold: true, free: true, speed: 2 }));
+      await wait(1400, tok);
+    } finally { helpers.forEach((h) => { try { h.destroy(); } catch { /* gone */ } }); }
+    status(`this page is about: ${clip(digest.key[0].text, 60)}`);
+    flash(8000);
+    return true;
+  }
+
   // Fetch: you tapped a word; bring back its sentence.
   async function fetchSentence(tok, item) {
     const sentence = sentenceAround(item.el);
     status(`fetching the sentence with “${clean(item.text)}”`);
     aimAt(item.el);
     goToEl(item.el, { speed: 1.9 });
-    await until(arrived, 8000, tok);
+    await until(() => reached(item.el), 4000, tok);
     clearAim();
     crawler.crawler?.voice?.chirp('poke');
     world.touch?.(item.id, 2);
@@ -569,11 +679,7 @@ export function createWorker({ crawler, world, predictor = null, name = 'Crawler
     await wait(220, tok);
     await haul(tok, () => {
       remember('quotes', { text: sentence, href: location.href });
-      if (dock === 'chip' && ledger.classList.contains('is-closed')) {
-        toggle(); // show what it brought, then get out of the way
-        const t = setTimeout(() => { if (!ledger.classList.contains('is-closed')) toggle(); }, 5000);
-        ledger.addEventListener('pointerdown', () => clearTimeout(t), { once: true });
-      }
+      flash(5000); // show what it brought, then get out of the way
     }, 'bringing it to the ledger');
   }
   function sentenceAround(el) {
@@ -602,14 +708,15 @@ export function createWorker({ crawler, world, predictor = null, name = 'Crawler
     const dx = ex - p.x, dy = ey - p.y, d = Math.hypot(dx, dy), MAXW = 260;
     if (d > MAXW) { ex = p.x + (dx / d) * MAXW; ey = p.y + (dy / d) * MAXW; }
     goToPoint(ex, ey, { speed: 1.7, look: { x: L.left + L.width / 2, y: L.top + 20 } });
-    await until(arrived, 4000, tok);
+    await until(arrived, 2500, tok);
     await wait(120, tok);
     // fling
     const flying = carried; carried = [];
     silk.setAttribute('d', '');
     const tx = L.left + 16, ty = L.top + Math.min(70, L.height / 2);
     await Promise.all(flying.map((t, i) => fly(t, tx + i * 6, ty + i * 4, 480 + i * 80)));
-    land();
+    land(); // what it caught always reaches the ledger, even if you called it mid-flight
+    check(tok);
   }
   function fly(t, x, y, ms) {
     return new Promise((res) => {
@@ -626,15 +733,17 @@ export function createWorker({ crawler, world, predictor = null, name = 'Crawler
   }
 
   // ---- the loop ----------------------------------------------------------------------
-  let paused = false, held = false, pointing = false, destroyed = false, queued = null, running = false, pauseUntil = 0;
+  let paused = false, held = false, pointing = false, destroyed = false, queued = null, running = false, pauseUntil = 0, queuedSurvey = true;
   async function loop() {
     if (running) return;
     running = true;
+    await arrival.catch(() => {}); // walk in first, then read the page
     while (!destroyed) {
       const tok = token;
       try {
         if (paused || held || pointing || doc.hidden || crawler.state === 'asleep' && !queued || performance.now() < pauseUntil) { await sleep(400); continue; }
         if (queued) { const q = queued; queued = null; await fetchSentence(tok, q); lastJob = 'fetch'; await wait(600, tok); continue; }
+        if (queuedSurvey) { queuedSurvey = false; await survey(tok); lastJob = 'survey'; await wait(800, tok); continue; }
         const links = preferProse(visibleItems(['link']).filter((l) => (clean(l.text).match(/[a-zà-ÿ]/gi) || []).length >= 3 && l.href && !/^(javascript:|#)/i.test(l.getAttribute ? '' : l.href) && !/^javascript:/i.test(l.href) && !/^\[?\d+\]?$/.test(clean(l.text))));
         const roll = Math.random();
         let did = false;
@@ -648,6 +757,7 @@ export function createWorker({ crawler, world, predictor = null, name = 'Crawler
         }
         if (!did) { did = await splice(tok); if (did) lastJob = 'splice'; }
         if (!did) { status('looking for something to read'); await wait(1500, tok); continue; }
+        check(tok); // you may have tapped while it was finishing: don't stand still over your tap
         status('looking around');
         holdHere(null);
         await wait(500 + Math.random() * 700, tok);
@@ -660,16 +770,30 @@ export function createWorker({ crawler, world, predictor = null, name = 'Crawler
 
   // ---- you can direct it --------------------------------------------------------------
   const offs = [];
-  offs.push(crawler.on('call', () => { cancel(); pauseUntil = performance.now() + 2600; status('coming to you'); }));
+  offs.push(crawler.on('call', () => {
+    if (fetchTap && performance.now() - fetchTap < 50) return; // the tap on a word already took this
+    cancel(); pauseUntil = performance.now() + 2600; status('coming to you');
+  }));
   offs.push(crawler.on('poke', () => { pauseUntil = performance.now() + 900; }));
   offs.push(world.on('tap', (e) => {
     if (e.claimed) return; // tapped the creature itself
     const hit = world.queryNear(e.x, e.y, 6, { kinds: ['word'], limit: 1 })[0];
     if (!hit || hit.el.closest('a')) return; // links keep working as links
+    fetchQueued(hit);
+  }));
+  // A fetch starts on the tap itself: the old job unwinds at its next step, but
+  // the body turns and heads for the word now, so the tap is answered at once.
+  let fetchTap = 0;
+  function fetchQueued(it) {
     cancel();
     pauseUntil = 0;
-    queued = hit;
-  }));
+    queued = it;
+    fetchTap = performance.now();
+    if (held || paused) return;
+    aimAt(it.el);
+    goToEl(it.el, { speed: 1.9 });
+    status(`fetching the sentence with “${clean(it.text)}”`);
+  }
 
   // ---- keep a copy: the mutated page as its own file -------------------------------------
   // Scripts are stripped, our marks and their styles are kept, and the copy boots
@@ -714,7 +838,7 @@ export function createWorker({ crawler, world, predictor = null, name = 'Crawler
     store.set('arrive', { x: e.clientX / win.innerWidth, t: Date.now(), from: pageKey(location), host: location.host, carrying: clean(a.textContent).slice(0, 40) });
   }
   doc.addEventListener('click', onLinkClick, true);
-  store.get('arrive').then((a) => {
+  const arrival = store.get('arrive').then((a) => {
     if (!a || destroyed || Date.now() - a.t > 20000 || a.from === pageKey(location)) return;
     store.set('arrive', null);
     const B = world.bounds();
@@ -737,9 +861,10 @@ export function createWorker({ crawler, world, predictor = null, name = 'Crawler
     pageLayer.destroy();
     unmark();
     added.forEach((el) => el.remove());
+    removeSheet();
   }
 
-  return {
+  const api = {
     destroy,
     pause() { paused = true; cancel(); },
     resume() { paused = false; },
@@ -752,24 +877,33 @@ export function createWorker({ crawler, world, predictor = null, name = 'Crawler
     async point(el, { label = 'here', ms = 6000 } = {}) {
       if (!el?.isConnected) return false;
       cancel();
-      const tok = token;
-      pointing = true;
+      const tok = token, me = {};
+      pointing = me;
       try {
         const r = el.getBoundingClientRect();
         if (r.bottom < 0 || r.top > win.innerHeight) { el.scrollIntoView({ block: 'center', behavior: 'smooth' }); await wait(500, tok); }
         status(label);
         aimAt(el);
         goToEl(el, { speed: 1.9 });
-        await until(arrived, 8000, tok);
+        await until(() => reached(el), 8000, tok);
         await wait(ms, tok);
         clearAim();
-      } catch (e) { if (e !== CANCEL) throw e; } finally { if (tok === token) { clearAim(); pointing = false; } }
+      } catch (e) { if (e !== CANCEL) throw e; } finally {
+        // Whoever cancelled us (a tap, a call, a newer point) owns the body now,
+        // but the loop must not stay parked on this point.
+        if (pointing === me) pointing = false;
+        if (tok === token) clearAim();
+      }
       return true;
     },
     /** Ask it to fetch the sentence around a page element (used by the extension's brain). */
-    fetch(el) { const id = el?.dataset?.cwId; const it = id && world.getItem(id); if (it) { cancel(); queued = it; } },
+    fetch(el) { const id = el?.dataset?.cwId; const it = id && world.getItem(id); if (it) fetchQueued(it); },
     status,
     get ledger() { return ledger; },
     get entries() { return entries; },
+    get digest() { return digest; },
+    /** Read the whole page again (digest + brood). */
+    read() { cancel(); pauseUntil = 0; queuedSurvey = true; },
   };
+  return api;
 }

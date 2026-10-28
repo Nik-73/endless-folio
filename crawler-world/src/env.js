@@ -27,6 +27,11 @@ export function createEmitter() {
 export const TAP_PAD = { mouse: 10, pen: 14, touch: 28 };
 
 const MAX_DPR = 2; // Higher backing stores cost battery for little visible gain.
+// The canvas is redrawn and handed to the compositor every frame, so its size is
+// most of the cost on big screens and zoomed-out pages. A desktop site on a phone
+// is laid out ~1000 px wide and shown at ~35%: at the device ratio that canvas
+// would be 11 million pixels for a creature that covers a few thousand.
+const MAX_CANVAS_PX = 6e6;
 
 export function createEnv({ canvas, win = window, startMuted = true } = {}) {
   const em = createEmitter();
@@ -41,11 +46,15 @@ export function createEnv({ canvas, win = window, startMuted = true } = {}) {
   const viewport = { width: 0, height: 0, dpr: 1, scrollX: 0, scrollY: 0 };
 
   function sizeCanvas() {
-    const dpr = Math.min(MAX_DPR, win.devicePixelRatio || 1);
     // The canvas is CSS-sized to the *large* viewport (100lvh) so mobile URL
     // bar show/hide does not resize (and clear) the backing store mid-scroll.
     const w = canvas ? canvas.clientWidth : win.innerWidth;
     const h = canvas ? canvas.clientHeight : win.innerHeight;
+    // Pixels actually on the glass: device ratio times pinch zoom (below 1 on a
+    // zoomed-out page), within a fixed pixel budget.
+    const zoom = Math.min(1, win.visualViewport?.scale || 1);
+    const budget = Math.sqrt(MAX_CANVAS_PX / Math.max(1, w * h));
+    const dpr = +Math.max(0.5, Math.min(MAX_DPR, (win.devicePixelRatio || 1) * zoom, budget)).toFixed(3);
     if (w === viewport.width && h === viewport.height && dpr === viewport.dpr) return false;
     viewport.width = w; viewport.height = h; viewport.dpr = dpr;
     if (canvas) {
@@ -63,6 +72,8 @@ export function createEnv({ canvas, win = window, startMuted = true } = {}) {
     listeners.push(() => ro.disconnect());
   }
   listen(win, 'resize', () => { if (sizeCanvas()) em.emit('resize', { ...viewport }); });
+  // Pinch zoom changes how many device pixels the canvas covers, not its CSS size.
+  if (win.visualViewport) listen(win.visualViewport, 'resize', () => { if (sizeCanvas()) em.emit('resize', { ...viewport }); });
 
   // Coalesced to one event per frame; dx/dy is the total movement since the
   // previous emitted event.

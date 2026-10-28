@@ -4,12 +4,13 @@
 // it exactly. Shared by the bookmarklet (bookmarklet/loader.js) and the
 // Chrome extension's content script (crawler-extension/).
 
-import { makeRng } from './prng.js?v=20261028175358';
-import { CORPUS } from './corpus.js?v=20261028175358';
-import { createPredictor } from './predictor.js?v=20261028175358';
-import { createEnv } from './env.js?v=20261028175358';
-import { createWorld, resolvePaperColor } from './world.js?v=20261028175358';
-import { createWorker } from './worker.js?v=20261028175358';
+import { makeRng } from './prng.js?v=20261028215825';
+import { CORPUS } from './corpus.js?v=20261028215825';
+import { createPredictor } from './predictor.js?v=20261028215825';
+import { createEnv } from './env.js?v=20261028215825';
+import { createWorld, resolvePaperColor } from './world.js?v=20261028215825';
+import { createWorker } from './worker.js?v=20261028215825';
+import { addSheet } from './sheet.js?v=20261028215825';
 
 export const TOP_Z = 2147483000;
 const BLOCK_SEL = 'p, li, dd, dt, blockquote, figcaption, td, th, h1, h2, h3, h4, h5, h6';
@@ -25,11 +26,10 @@ const PAGE_CSS = `
   @keyframes cw-fx-hl { 0% { background-color: color-mix(in srgb, var(--fx-color, #d68a4a) 45%, transparent); } 100% { background-color: transparent; } }
   .fx-linked { text-decoration: underline; text-decoration-color: #d68a4a; text-underline-offset: 0.2em; }
   .fx-pulse { animation: cw-fx-pulse 0.9s ease-out; }
-  .fx-press { animation: cw-fx-press .42s cubic-bezier(.2,.7,.2,1); }
-  @keyframes cw-fx-press { 0% { translate: 0 1.5px; scale: .97; filter: brightness(.6) contrast(1.4); } 100% { translate: 0 0; scale: 1; filter: none; } }
+  .fx-press { translate: 0 1.5px; scale: .97; filter: brightness(.6) contrast(1.4); }
   @keyframes cw-fx-pulse { 30% { transform: scale(1.025) rotate(-0.6deg); } }
   .cw-canvas { position: fixed; left: 0; top: 0; width: 100vw; height: 100vh; height: 100lvh; pointer-events: none; }
-  @media (prefers-reduced-motion: reduce) { .fx-hl, .fx-pulse, .fx-press { animation: none; } }
+  @media (prefers-reduced-motion: reduce) { .fx-hl, .fx-pulse { animation: none; } .fx-press { translate: none; scale: none; } }
 `;
 
 /**
@@ -47,12 +47,7 @@ export async function attachToPage({ seed, createCrawler, uiClass = 'cw-bm-ui', 
   const rng = makeRng(seed).fork(rngLabel);
   const added = [];
 
-  const style = document.createElement('style');
-  style.className = uiClass;
-  style.dataset.cwUi = '';
-  style.textContent = PAGE_CSS;
-  document.head.append(style);
-  added.push(style);
+  const removeSheet = addSheet(document, PAGE_CSS, uiClass);
 
   const canvas = document.createElement('canvas');
   canvas.className = `cw-canvas ${canvasClass} ${uiClass}`.trim();
@@ -126,7 +121,8 @@ export async function attachToPage({ seed, createCrawler, uiClass = 'cw-bm-ui', 
 
   // Give it work: tear out links, eat and write, fetch what you tap (worker.js).
   const worker = work && crawler && 'mouth' in crawler
-    ? createWorker({ crawler, world, predictor, name, z: TOP_Z - 3, uiClass, store, seed: seedLabel ?? seed, colors: { ink: '#1d1915', paper: '#fbf7ee', hot: '#c2410c' } })
+    ? createWorker({ crawler, world, predictor, name, z: TOP_Z - 3, uiClass, store, seed: seedLabel ?? seed, startClosed: true,
+      spawn: async (i) => { const h = await createCrawler({ seed: `${seed}:brood${i}`, canvas, world, startAwake: true, sound: false, ...crawlerOptions, scale: (crawler?.scale || 1.5) * 0.55 }); h?.start?.(); return h; }, colors: { ink: '#1d1915', paper: '#fbf7ee', hot: '#c2410c' } })
     : null;
 
   // The site's own fixed and sticky bars sit above the page; the creature walks
@@ -176,6 +172,7 @@ export async function attachToPage({ seed, createCrawler, uiClass = 'cw-bm-ui', 
     document.querySelectorAll(`[${attr('block')}]`).forEach((el) => delete el.dataset[BLOCK_KEY]);
     document.querySelectorAll(`[${attr('id')}]`).forEach((el) => delete el.dataset[ID_KEY]);
     added.forEach((el) => el.remove());
+    removeSheet();
     document.querySelectorAll('.' + uiClass).forEach((el) => el.remove());
   }
 

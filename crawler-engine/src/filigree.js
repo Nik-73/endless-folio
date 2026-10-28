@@ -6,7 +6,7 @@
 // Render only. It reads the creature's existing traits (segments, legs,
 // palette) and takes extra ornament from its own fork of the seed, so a seed is
 // still the same creature, just drawn in more detail.
-import { createRng } from './rng.js?v=20261028175358';
+import { createRng } from './rng.js?v=20261028215825';
 
 const TAU = Math.PI * 2;
 const clamp = (x, lo, hi) => (x < lo ? lo : x > hi ? hi : x);

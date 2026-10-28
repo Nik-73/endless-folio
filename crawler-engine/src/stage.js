@@ -179,13 +179,13 @@ export class Stage {
     this._interacted = true;
     let hit = null;
     const pad = e?.pad ?? this.world?.tapPad ?? (pointerType === 'mouse' ? 12 : 20); // a fingertip needs a bigger target
-    for (const c of this.crawlers) if (c.placed && c.hitTest(x, y, pad)) { hit = c; break; }
+    for (const c of this.crawlers) if (c.placed && !c.passive && c.hitTest(x, y, pad)) { hit = c; break; }
     if (hit) { e?.claim?.(); hit.poke(x, y); return; } // only pokes claim; calls still follow links
     if (!this.tapToSteer) return;
     // Tap elsewhere: the nearest creature is called over.
     let best = null, bd = Infinity;
     for (const c of this.crawlers) {
-      if (!c.placed) continue;
+      if (!c.placed || c.passive) continue; // helpers never answer your taps
       const d = Math.hypot(c.x - x, c.y - y);
       if (d < bd) { bd = d; best = c; }
     }

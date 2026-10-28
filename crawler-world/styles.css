@@ -194,8 +194,7 @@ a.xref:focus-visible { outline: 2px solid var(--accent-soft); outline-offset: 2p
 .fx-linked { text-decoration: underline; text-decoration-color: var(--accent-soft); text-underline-offset: 0.2em; }
 .fx-ghost { color: var(--ink-soft); }
 .fx-pulse { animation: fx-pulse 0.9s ease-out; }
-.fx-press { animation: fx-press .42s cubic-bezier(.2,.7,.2,1); }
-@keyframes fx-press { 0% { translate: 0 1.5px; scale: .97; filter: brightness(.6) contrast(1.4); } 100% { translate: 0 0; scale: 1; filter: none; } }
+.fx-press { translate: 0 1.5px; scale: .97; filter: brightness(.6) contrast(1.4); }
 
 @keyframes fx-pulse { 30% { transform: scale(1.025) rotate(-0.6deg); } }
 
@@ -281,5 +280,6 @@ a.xref:focus-visible { outline: 2px solid var(--accent-soft); outline-offset: 2p
 @media (prefers-reduced-motion: reduce) {
   .continuation .entry-section.fresh { animation: none; }
   .controls, .controls.is-hidden { transform: none; }
-  .fx-pulse, .fx-press { animation: none; }
+  .fx-pulse { animation: none; }
+  .fx-press { translate: none; scale: none; }
 }

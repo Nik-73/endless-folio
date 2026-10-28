@@ -103,6 +103,7 @@ export function createPageLayer({ store, world, doc = document, onApply = () => 
     },
     recordTear(a) { this.record({ k: 'tear', href: a.href, text: norm(a.textContent) }); },
     recordBite(el) { const an = anchorWord(el); if (an) this.record({ k: 'bite', ...an }); },
+    recordWord(k, el) { const an = anchorWord(el); if (an) this.record({ k, ...an }); },
     recordKnock(el, t, o) { const an = anchorWord(el); if (an) this.record({ k: 'knock', ...an, t, o }); },
     clear() { ops = []; pending.clear(); store.set(key, null); },
     replay,

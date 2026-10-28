@@ -1,15 +1,15 @@
-import { makeRng, parseSeed, hashString } from './prng.js?v=20261028175358';
-import { CORPUS } from './corpus.js?v=20261028175358';
-import { createPredictor } from './predictor.js?v=20261028175358';
-import { createArticleBuilder } from './article.js?v=20261028175358';
-import { createEnv } from './env.js?v=20261028175358';
-import { createWorld } from './world.js?v=20261028175358';
-import { createCrawler as createStubCrawler } from './stub-crawler.js?v=20261028175358';
-import { createWorker } from './worker.js?v=20261028175358';
+import { makeRng, parseSeed, hashString } from './prng.js?v=20261028215825';
+import { CORPUS } from './corpus.js?v=20261028215825';
+import { createPredictor } from './predictor.js?v=20261028215825';
+import { createArticleBuilder } from './article.js?v=20261028215825';
+import { createEnv } from './env.js?v=20261028215825';
+import { createWorld } from './world.js?v=20261028215825';
+import { createCrawler as createStubCrawler } from './stub-crawler.js?v=20261028215825';
+import { createWorker } from './worker.js?v=20261028215825';
 
 // Where to look for the real engine. ?engine=stub forces the stub;
 // ?engine=<url> loads a specific module.
-const ENGINE_CANDIDATES = ['../crawler-engine/src/index.js?v=20261028175358', '../crawler-engine/index.js?v=20261028175358'];
+const ENGINE_CANDIDATES = ['../crawler-engine/src/index.js?v=20261028215825', '../crawler-engine/index.js?v=20261028215825'];
 const MAX_SECTIONS = 400; // Safety valve on DOM size for very long sessions.
 
 const params = new URLSearchParams(location.search);
@@ -101,7 +101,8 @@ crawler?.start?.();
 const rawSeed = params.get('seed') || '';
 const ownerName = /^\d+$/.test(rawSeed) ? `Specimen ${rawSeed}` : rawSeed.charAt(0).toUpperCase() + rawSeed.slice(1);
 const worker = crawler && 'mouth' in crawler && params.get('work') !== 'off'
-  ? createWorker({ crawler, world, predictor, name: ownerName, seed: rawSeed || seed, z: 45, colors: { ink: '#221d17', paper: '#f6f0e3', hot: '#c2410c' }, avoid: () => [document.getElementById('controls')?.getBoundingClientRect()] })
+  ? createWorker({ crawler, world, predictor, name: ownerName, seed: rawSeed || seed, z: 45,
+      spawn: (i) => { const h = createCrawler({ seed: `${seed}:brood${i}`, canvas, world, startAwake: true, sound: false, scale: bodyScale * 0.55 }); h?.start?.(); return h; }, colors: { ink: '#221d17', paper: '#f6f0e3', hot: '#c2410c' }, avoid: () => [document.getElementById('controls')?.getBoundingClientRect()] })
   : null;
 document.getElementById('seed-label').textContent = /^\d+$/.test(rawSeed) ? `specimen ${seed}` : `${ownerName}'s specimen`;
 

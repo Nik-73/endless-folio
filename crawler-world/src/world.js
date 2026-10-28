@@ -7,7 +7,7 @@
 //
 // See ../WORLD_API.md for the contract.
 
-import { createThreadLayer } from './fx-layer.js?v=20261028175358';
+import { createThreadLayer } from './fx-layer.js?v=20261028215825';
 
 const KINDS = ['word', 'link', 'image', 'block'];
 
@@ -286,16 +286,21 @@ export function createWorld({ root, env, predictor, rng, threadMount, threadZ = 
     return () => el.classList.remove('fx-pulse');
   }
 
-  // A foot's weight: the word dips for a moment. Uses the `translate` property,
-  // so it never fights a word's own transform (knocked or scattered words).
+  // A foot's weight: the word under it dips while the foot is planted. Uses the
+  // `translate` property, so it never fights a word's own transform (knocked or
+  // scattered words). One word at a time and no keyframes: an animated word
+  // repaints the whole page layer every frame, which on a long page is most of
+  // a phone's frame budget. A snap costs two small repaints per step.
+  let pressed = null, pressT = 0, pressAt = 0;
+  function release() { clearTimeout(pressT); pressed?.classList.remove('fx-press'); pressed = null; }
   function press(it) {
-    const el = it.el;
-    el.classList.remove('fx-press');
-    void el.offsetWidth;
-    el.classList.add('fx-press');
-    clearTimeout(timers.get(el));
-    timers.set(el, setTimeout(() => el.classList.remove('fx-press'), 420));
-    return () => el.classList.remove('fx-press');
+    const el = it.el, now = performance.now();
+    if (el !== pressed && now - pressAt < 110) return () => {}; // feet land faster than the eye reads
+    pressAt = now;
+    if (pressed !== el) { pressed?.classList.remove('fx-press'); pressed = el; el.classList.add('fx-press'); }
+    clearTimeout(pressT);
+    pressT = setTimeout(release, 200);
+    return () => { if (pressed === el) release(); };
   }
 
   function applyEffect(type, target, opts = {}) {
@@ -331,6 +336,7 @@ export function createWorld({ root, env, predictor, rng, threadMount, threadZ = 
 
   // ---- public ------------------------------------------------------------------
   root.querySelectorAll('[data-block]').forEach(register);
+  let boundsNow = null;
 
   return {
     version: 1,
@@ -355,10 +361,16 @@ export function createWorld({ root, env, predictor, rng, threadMount, threadZ = 
     recentTouches: () => touched.slice(),
     /** Visible part of the article column, in viewport coords: the creature's roaming area. */
     bounds() {
+      // Every creature asks several times a frame, between DOM writes (pressed
+      // words, carried tags), so each fresh read would force a style and layout
+      // pass. Measure once per task instead.
+      if (boundsNow) return boundsNow;
       const r = root.getBoundingClientRect();
       const vh = env.viewport.height || win.innerHeight;
       const y0 = Math.max(0, r.top), y1 = Math.min(vh, r.bottom);
-      return { x: r.left, y: y0, w: r.width, h: Math.max(0, y1 - y0) };
+      boundsNow = { x: r.left, y: y0, w: r.width, h: Math.max(0, y1 - y0) };
+      queueMicrotask(() => { boundsNow = null; });
+      return boundsNow;
     },
     /** The whole article column, in viewport coords (may extend far off-screen). */
     columnBounds() {
@@ -371,6 +383,6 @@ export function createWorld({ root, env, predictor, rng, threadMount, threadZ = 
     stats: () => ({ blocks: blocks.size, active: active.size, items: items.size, threads: threads.count() }),
     reflow: invalidateAll,
     /** Host-only: stop observing and remove threads (used by the bookmarklet's teardown). */
-    destroy() { gone = true; io.disconnect(); ro.disconnect(); clearTimeout(reflowTimer); threads.destroy(); },
+    destroy() { gone = true; io.disconnect(); ro.disconnect(); clearTimeout(reflowTimer); release(); threads.destroy(); },
   };
 }

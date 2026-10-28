@@ -3,7 +3,7 @@
 // It exists to exercise the world API: follows the pointer/finger, otherwise
 // wanders between nearby words, and triggers every effect type.
 
-import { makeRng } from './prng.js?v=20261028175358';
+import { makeRng } from './prng.js?v=20261028215825';
 
 export function createCrawler({ seed, canvas, world }) {
   const rng = makeRng(seed ?? 1);
