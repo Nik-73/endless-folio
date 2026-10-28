@@ -4,11 +4,11 @@
 // it exactly. Shared by the bookmarklet (bookmarklet/loader.js) and the
 // Chrome extension's content script (crawler-extension/).
 
-import { makeRng } from './prng.js?v=20261028143806';
-import { CORPUS } from './corpus.js?v=20261028143806';
-import { createPredictor } from './predictor.js?v=20261028143806';
-import { createEnv } from './env.js?v=20261028143806';
-import { createWorld, resolvePaperColor } from './world.js?v=20261028143806';
+import { makeRng } from './prng.js?v=20261028144733';
+import { CORPUS } from './corpus.js?v=20261028144733';
+import { createPredictor } from './predictor.js?v=20261028144733';
+import { createEnv } from './env.js?v=20261028144733';
+import { createWorld, resolvePaperColor } from './world.js?v=20261028144733';
 
 export const TOP_Z = 2147483000;
 const BLOCK_SEL = 'p, li, dd, dt, blockquote, figcaption, td, th, h1, h2, h3, h4, h5, h6';

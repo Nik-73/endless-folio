@@ -1,17 +1,17 @@
 // Public entry point. See ../API.md.
 //
-//   import { createCrawler } from './crawler-engine/src/index.js?v=20261028143806';
+//   import { createCrawler } from './crawler-engine/src/index.js?v=20261028144733';
 //   const c = createCrawler({ seed: 42, canvas, world });
 //   c.start();
-import { Crawler } from './crawler.js?v=20261028143806';
-import { getStage } from './stage.js?v=20261028143806';
-import { adaptWorld, isFolioWorld } from './world-adapter.js?v=20261028143806';
-import { installAudioUnlock, adoptAudio, audio } from './audio.js?v=20261028143806';
-import { generateTraits, toAttributes, TRAITS_VERSION } from './traits.js?v=20261028143806';
-import { sizeFloorScale, presence } from './size.js?v=20261028143806';
+import { Crawler } from './crawler.js?v=20261028144733';
+import { getStage } from './stage.js?v=20261028144733';
+import { adaptWorld, isFolioWorld } from './world-adapter.js?v=20261028144733';
+import { installAudioUnlock, adoptAudio, audio } from './audio.js?v=20261028144733';
+import { generateTraits, toAttributes, TRAITS_VERSION } from './traits.js?v=20261028144733';
+import { sizeFloorScale, presence } from './size.js?v=20261028144733';
 
 export { generateTraits, toAttributes, TRAITS_VERSION, audio, presence, sizeFloorScale };
-export { createStubWorld } from './stub-world.js?v=20261028143806';
+export { createStubWorld } from './stub-world.js?v=20261028144733';
 
 export const ENGINE_VERSION = '0.3.0';
 

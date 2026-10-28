@@ -1,14 +1,14 @@
-import { makeRng, parseSeed, hashString } from './prng.js?v=20261028143806';
-import { CORPUS } from './corpus.js?v=20261028143806';
-import { createPredictor } from './predictor.js?v=20261028143806';
-import { createArticleBuilder } from './article.js?v=20261028143806';
-import { createEnv } from './env.js?v=20261028143806';
-import { createWorld } from './world.js?v=20261028143806';
-import { createCrawler as createStubCrawler } from './stub-crawler.js?v=20261028143806';
+import { makeRng, parseSeed, hashString } from './prng.js?v=20261028144733';
+import { CORPUS } from './corpus.js?v=20261028144733';
+import { createPredictor } from './predictor.js?v=20261028144733';
+import { createArticleBuilder } from './article.js?v=20261028144733';
+import { createEnv } from './env.js?v=20261028144733';
+import { createWorld } from './world.js?v=20261028144733';
+import { createCrawler as createStubCrawler } from './stub-crawler.js?v=20261028144733';
 
 // Where to look for the real engine. ?engine=stub forces the stub;
 // ?engine=<url> loads a specific module.
-const ENGINE_CANDIDATES = ['../crawler-engine/src/index.js?v=20261028143806', '../crawler-engine/index.js?v=20261028143806'];
+const ENGINE_CANDIDATES = ['../crawler-engine/src/index.js?v=20261028144733', '../crawler-engine/index.js?v=20261028144733'];
 const MAX_SECTIONS = 400; // Safety valve on DOM size for very long sessions.
 
 const params = new URLSearchParams(location.search);
@@ -91,7 +91,9 @@ async function loadEngine() {
 
 const { createCrawler, source } = await loadEngine();
 document.documentElement.dataset.engine = source === 'stub' ? 'stub' : 'engine';
-const crawler = await createCrawler({ seed, canvas, world, startAwake: true }); // alive on arrival; sleep comes later, by temperament
+// Big enough to read as a creature at a glance, not a speck in the margin.
+const bodyScale = Number(params.get("size")) || (matchMedia("(max-width: 600px)").matches ? 1.7 : 2.4);
+const crawler = await createCrawler({ seed, canvas, world, startAwake: true, scale: bodyScale }); // alive on arrival; sleep comes later, by temperament
 crawler?.start?.();
 
 // ---- phone controls: hide while reading down ---------------------------------

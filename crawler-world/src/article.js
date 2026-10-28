@@ -1,9 +1,9 @@
 // Builds the encyclopedia-style article DOM from a page seed. All prose words
 // are wrapped in <span class="w"> so the world can hit-test and animate them.
 
-import { NAME_PARTS, KINDS, PLACES, SECTION_TITLES } from './corpus.js?v=20261028143806';
-import { makePlate } from './plates.js?v=20261028143806';
-import { hashString } from './prng.js?v=20261028143806';
+import { NAME_PARTS, KINDS, PLACES, SECTION_TITLES } from './corpus.js?v=20261028144733';
+import { makePlate } from './plates.js?v=20261028144733';
+import { hashString } from './prng.js?v=20261028144733';
 
 const ROMAN = ['I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII', 'IX', 'X', 'XI', 'XII'];
 

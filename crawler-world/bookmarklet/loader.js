@@ -6,12 +6,12 @@
 // restores the page text. The page plumbing lives in ../src/host-page.js,
 // shared with the Chrome extension.
 
-import { parseSeed } from '../src/prng.js?v=20261028143806';
-import { attachToPage, TOP_Z } from '../src/host-page.js?v=20261028143806';
-import { createCrawler as createStubCrawler } from '../src/stub-crawler.js?v=20261028143806';
+import { parseSeed } from '../src/prng.js?v=20261028144733';
+import { attachToPage, TOP_Z } from '../src/host-page.js?v=20261028144733';
+import { createCrawler as createStubCrawler } from '../src/stub-crawler.js?v=20261028144733';
 
 const KEY = '__folioBookmarklet';
-const ENGINE_CANDIDATES = ['../../crawler-engine/src/index.js?v=20261028143806', '../../crawler-engine/index.js?v=20261028143806'];
+const ENGINE_CANDIDATES = ['../../crawler-engine/src/index.js?v=20261028144733', '../../crawler-engine/index.js?v=20261028144733'];
 
 if (window[KEY]) {
   window[KEY].destroy();
